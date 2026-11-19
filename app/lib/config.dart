@@ -5,7 +5,7 @@ const String apiBaseUrl =
     String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:3000');
 
 /// Апп дээр урьдчилан харуулах хүргэлтийн үнэ (эцсийн дүнг сервер тооцно).
-const int deliveryFee = 5000;
+const int deliveryFee = 100;
 const int freeDeliveryFrom = 100000;
 
 const List<String> districts = [
