@@ -1,10 +1,23 @@
 {
   "name": "toy-shop-backend",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Тоглоомын дэлгүүрийн backend (QPay v2 / дансаар шилжүүлэх)",
   "main": "server.js",
   "type": "module",
-  "scripts": { "start": "node server.js", "dev": "node --watch server.js" },
-  "engines": { "node": ">=18" },
-  "dependencies": { "cors": "^2.8.5", "dotenv": "^16.4.5", "express": "^4.21.0", "pg": "^8.13.0" }
+  "scripts": {
+    "start": "node server.js",
+    "dev": "PG_MEM=1 node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "pg-mem": "^3.0.0"
+  }
 }

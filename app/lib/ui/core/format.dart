@@ -1,3 +1,6 @@
+/// 125000 -> "125,000"
+String formatNumber(int value) => formatMnt(value).replaceAll('₮', '');
+
 /// 125000 -> "125,000₮"
 String formatMnt(int value) {
   final s = value.abs().toString();

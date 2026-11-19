@@ -70,10 +70,10 @@
 <div class="toast" id="toast" role="status"></div>
 
 <script>
-const FULFILL = { NEW: 'Шинэ', SHIPPING: 'Хүргэлтэнд гарсан', DELIVERED: 'Хүргэгдсэн', CANCELLED: 'Цуцалсан' };
-const MODE = { mock: 'Туршилтын төлбөр', manual: 'Дансаар шилжүүлэх', qpay: 'QPay' };
+const FULFILL = { NEW: 'Шинэ', PREPARING: 'Бэлтгэж байна', SHIPPING: 'Хүргэлтэнд гарсан', DELIVERED: 'Хүргэгдсэн', CANCELLED: 'Цуцалсан' };
+const MODE = { mock: 'Туршилтын төлбөр', manual: 'Дансаар шилжүүлэх', qpay: 'QPay', points: 'Оноогоор' };
 let key = localStorage.getItem('adminKey') || '';
-let tab = 'orders', filter = 'PAID_NEW', orders = [], products = [], info = null, editing = null;
+let tab = 'orders', filter = 'PAID_NEW', orders = [], products = [], info = null, editing = null, settings = null, pendingImage = null, customers = [], smsLog = [];
 
 const $app = document.getElementById('app');
 const fmt = (n) => Number(n).toLocaleString('en-US') + '₮';
@@ -115,13 +115,15 @@ function renderLogin(err = '') {
 }
 
 async function load() {
-  [orders, products] = await Promise.all([api('/api/admin/orders'), api('/api/admin/products')]);
+  [orders, products, settings, customers, smsLog] = await Promise.all([
+    api('/api/admin/orders'), api('/api/admin/products'), api('/api/admin/settings'),
+    api('/api/admin/customers'), api('/api/admin/sms')]);
   render();
 }
 
 function filteredOrders() {
   return orders.filter((o) => {
-    if (filter === 'PAID_NEW') return o.status === 'PAID' && o.fulfillment === 'NEW';
+    if (filter === 'PAID_NEW') return o.status === 'PAID' && (o.fulfillment === 'NEW' || o.fulfillment === 'PREPARING');
     if (filter === 'PENDING') return o.status === 'PENDING';
     if (filter === 'ALL') return true;
     return o.fulfillment === filter;
@@ -138,7 +140,7 @@ function orderHtml(o) {
       <div><span class="order-id">${esc(o.id)}</span>
         <span class="pill ${o.status}">${o.status === 'PAID' ? 'Төлөгдсөн' : 'Төлбөр хүлээж буй'}</span></div>
       <div class="total">${fmt(o.total)}</div>
-      <div class="meta">${esc(d.fullName)}, ${esc(d.phone)}${d.extraPhone ? ' / ' + esc(d.extraPhone) : ''}</div>
+      <div class="meta">${esc(d.fullName)}, ${esc(d.phone)}${o.customer ? ` (бүртгэлтэй: ${esc(o.customer.phone)})` : ''}</div>
       <div class="meta">${when(o.createdAt)}</div>
     </div>
     <div class="meta">${items}</div>
@@ -146,13 +148,14 @@ function orderHtml(o) {
       <summary>Хаяг, дэлгэрэнгүй</summary>
       <div class="addr">${esc(addr)}${d.note ? '\nТайлбар: ' + esc(d.note) : ''}
 И-баримт: ${d.receiptType === 'company' ? 'Байгууллага, РД ' + esc(d.companyRegister) : 'Хувь хүн'}${d.email ? '\nИ-мэйл: ' + esc(d.email) : ''}
-Бараа ${fmt(o.subtotal)}, хүргэлт ${fmt(o.deliveryFee)}, төлбөрийн горим: ${esc(MODE[o.paymentMode] || o.paymentMode)}</div>
+Хүргэлт: ${esc(d.deliveryOption?.name || 'Стандарт')}
+Бараа ${fmt(o.subtotal)}, хүргэлт ${fmt(o.deliveryFee)}${o.pointsUsed ? `, оноо −${o.pointsUsed}` : ''}${o.pointsEarned ? `, олгосон оноо +${o.pointsEarned}` : ''}, төлбөрийн горим: ${esc(MODE[o.paymentMode] || o.paymentMode)}</div>
     </details>
     <div class="actions">
-      ${o.status === 'PENDING' && o.paymentMode !== 'qpay'
+      ${o.status === 'PENDING' && o.paymentMode !== 'qpay' && o.fulfillment !== 'CANCELLED'
         ? `<button class="btn sun" data-paid="${esc(o.id)}">Төлбөр орсон гэж батлах</button>` : ''}
       <label class="meta">Хүргэлт:
-        <select data-ful="${esc(o.id)}">
+        <select data-ful="${esc(o.id)}" ${o.fulfillment === 'CANCELLED' ? 'disabled' : ''}>
           ${Object.entries(FULFILL).map(([k, v]) => `<option value="${k}" ${o.fulfillment === k ? 'selected' : ''}>${v}</option>`).join('')}
         </select></label>
       <a class="meta" href="tel:${esc(d.phone)}">Залгах</a>
@@ -162,7 +165,7 @@ function orderHtml(o) {
 
 function ordersPanel() {
   const list = filteredOrders();
-  const opts = { PAID_NEW: 'Илгээх ёстой', PENDING: 'Төлбөр хүлээж буй', SHIPPING: 'Хүргэлтэнд', DELIVERED: 'Хүргэгдсэн', CANCELLED: 'Цуцалсан', ALL: 'Бүгд' };
+  const opts = { PAID_NEW: 'Илгээх ёстой', PENDING: 'Төлбөр хүлээж буй', PREPARING: 'Бэлтгэж байна', SHIPPING: 'Хүргэлтэнд', DELIVERED: 'Хүргэгдсэн', CANCELLED: 'Цуцалсан', ALL: 'Бүгд' };
   return `
   <div class="toolbar">
     <select id="filter" aria-label="Шүүлтүүр">${Object.entries(opts).map(([k, v]) => `<option value="${k}" ${filter === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
@@ -174,22 +177,137 @@ function ordersPanel() {
 }
 
 function productForm(p) {
-  const v = p || { name: '', category: '', ageRange: '', price: '', stock: '', emoji: '🎁', imageUrl: '', description: '', active: true };
+  const v = p || { name: '', subtitle: '', sku: '', category: '', ageRange: '', price: '', stock: '', emoji: '🎁', imageUrl: '', description: '', isNew: false, features: [], active: true };
+  const img = pendingImage ?? v.imageUrl;
+  const feats = (v.features || []).map((f) => `${f.value} | ${f.label}`).join('\n');
+  const cats = [...new Set(products.map((x) => x.category).filter(Boolean))];
   return `
   <form id="pform" class="panel" style="border:1px solid var(--line); border-radius:14px; margin-bottom:14px">
     <strong>${p ? 'Бараа засах' : 'Шинэ бараа'}</strong>
-    <div class="form-grid" style="margin-top:10px">
-      <label>Нэр<input name="name" value="${esc(v.name)}" required></label>
-      <label>Ангилал<input name="category" value="${esc(v.category)}"></label>
+    <div style="display:flex; gap:14px; align-items:center; margin:12px 0">
+      <div style="width:96px; height:96px; border-radius:12px; background:var(--bg); display:grid; place-items:center; overflow:hidden; flex:none">
+        ${img ? `<img src="${esc(img)}" alt="" style="width:100%; height:100%; object-fit:contain">` : `<span class="emoji">${esc(v.emoji)}</span>`}
+      </div>
+      <div>
+        <label class="btn ghost" style="display:inline-block">Зураг сонгох
+          <input type="file" id="pimg" accept="image/*" style="display:none"></label>
+        ${img ? '<button type="button" class="btn ghost" id="pimgclear">Зураг хасах</button>' : ''}
+        <div class="meta" id="pimgstatus" style="margin-top:6px">JPG/PNG. Цагаан эсвэл тунгалаг дэвсгэртэй зураг хамгийн гоё харагдана.</div>
+      </div>
+    </div>
+    <div class="form-grid">
+      <label>Нэр<input name="name" value="${esc(v.name)}" required placeholder="Угсардаг Робот"></label>
+      <label>Дэд нэр<input name="subtitle" value="${esc(v.subtitle)}" placeholder="Elite Commander (White & Blue)"></label>
+      <label>Ангилал<input name="category" value="${esc(v.category)}" list="catlist" placeholder="Робот"></label>
+      <label>Барааны код<input name="sku" value="${esc(v.sku)}" placeholder="5T-0001"></label>
       <label>Нас<input name="ageRange" value="${esc(v.ageRange)}" placeholder="3+"></label>
       <label>Үнэ (₮)<input name="price" type="number" min="0" step="1" value="${esc(v.price)}" required></label>
       <label>Үлдэгдэл<input name="stock" type="number" min="0" step="1" value="${esc(v.stock)}" required></label>
-      <label>Emoji<input name="emoji" value="${esc(v.emoji)}" maxlength="8"></label>
+      <label>Emoji (зураггүй үед)<input name="emoji" value="${esc(v.emoji)}" maxlength="8"></label>
     </div>
-    <label class="meta">Зургийн холбоос (https://...)<input name="imageUrl" value="${esc(v.imageUrl)}" style="width:100%"></label>
+    <datalist id="catlist">${cats.map((c) => `<option value="${esc(c)}">`).join('')}</datalist>
     <label class="meta">Тайлбар<textarea name="description">${esc(v.description)}</textarea></label>
+    <label class="meta">Онцлог (мөр бүрд "утга | нэр", ихдээ 4)<textarea name="features" placeholder="683 | Хэсэг&#10;2 | Хэлбэр&#10; | Бат бөх дизайн">${esc(feats)}</textarea></label>
+    <label class="meta"><input type="checkbox" name="isNew" ${v.isNew ? 'checked' : ''}> "ШИНЭ" тэмдэг харуулах</label><br>
+    <label class="meta"><input type="checkbox" name="pointsEligible" ${v.pointsEligible ? 'checked' : ''}> Оноогоор авч болно</label><br>
     <label class="meta"><input type="checkbox" name="active" ${v.active !== false ? 'checked' : ''}> Апп дээр харуулах</label>
     <div class="actions"><button class="btn">Хадгалах</button><button type="button" class="btn ghost" id="pcancel">Болих</button></div>
+  </form>`;
+}
+
+// Зургийг хөтөч дээр 1000px хүртэл багасгаж JPEG болгоно
+function resizeImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 1000, k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      const g = c.getContext('2d');
+      g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+      g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      resolve(c.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => reject(new Error('Зургийг уншиж чадсангүй'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+const when2 = (ms) => new Date(ms).toLocaleString('mn-MN', { dateStyle: 'short', timeStyle: 'short' });
+
+function customersPanel() {
+  if (!customers.length) return '<div class="empty">Бүртгэлтэй хэрэглэгч алга.</div>';
+  return `
+  <p class="meta">${customers.length} хэрэглэгч. Оноо нэмэх бол эерэг, хасах бол сөрөг тоо оруулна.</p>
+  <table>
+    <thead><tr><th>Утас</th><th>Нэр</th><th>Оноо</th><th class="hide-sm">Захиалга</th><th></th></tr></thead>
+    <tbody>${customers.map((c) => `
+      <tr>
+        <td><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></td>
+        <td>${esc(c.name)}</td>
+        <td><strong>${c.points.toLocaleString('en-US')}</strong></td>
+        <td class="hide-sm">${c.orderCount}</td>
+        <td style="white-space:nowrap">
+          <input type="number" step="1" style="width:90px" data-pts-input="${esc(c.id)}" aria-label="Оноо">
+          <button class="btn ghost" data-pts="${esc(c.id)}">Хадгалах</button>
+        </td>
+      </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+function smsPanel() {
+  const test = info?.sms === 'test';
+  return `
+  ${test ? `<p style="background:var(--sun); color:var(--sun-ink); padding:10px 12px; border-radius:10px; font-weight:700">
+    Туршилтын горим: SMS бодитоор илгээгдэхгүй. Хэрэглэгчийн нэвтрэх кодыг эндээс харж хэлж өгнө үү.
+    SMS үйлчилгээтэй гэрээ хийсний дараа Render дээр SMS_PROVIDER-ийг солино.</p>` : ''}
+  ${smsLog.length ? `<table>
+    <thead><tr><th>Цаг</th><th>Утас</th><th>Мессеж</th><th class="hide-sm">Төлөв</th></tr></thead>
+    <tbody>${smsLog.map((m) => `
+      <tr><td class="meta" style="white-space:nowrap">${when2(m.createdAt)}</td><td>${esc(m.phone)}</td>
+        <td>${esc(m.text)}</td>
+        <td class="hide-sm meta">${m.status === 'sent' ? 'Илгээсэн' : m.status === 'failed' ? 'Алдаа' : 'Туршилт'}</td></tr>`).join('')}
+    </tbody></table>` : '<div class="empty">Мессеж алга.</div>'}`;
+}
+
+function settingsPanel() {
+  const s = settings || { deliveryOptions: [] };
+  const rows = [...s.deliveryOptions];
+  while (rows.length < 3) rows.push({ id: '', name: '', eta: '', fee: 0, active: false });
+  return `
+  <form id="sform">
+    <strong>Хүргэлтийн сонголтууд</strong>
+    <p class="meta">Хэрэглэгч захиалга өгөхдөө эдгээрээс сонгоно. Үнийг 0 гэвэл "Үнэгүй" гэж харагдана.</p>
+    <table>
+      <thead><tr><th>Нэр</th><th>Хугацаа</th><th>Үнэ (₮)</th><th>Идэвхтэй</th></tr></thead>
+      <tbody>${rows.map((o, i) => `
+        <tr data-opt="${i}" data-id="${esc(o.id)}">
+          <td><input name="name" value="${esc(o.name)}" placeholder="Стандарт хүргэлт"></td>
+          <td><input name="eta" value="${esc(o.eta)}" placeholder="1-2 өдөр"></td>
+          <td><input name="fee" type="number" min="0" step="100" value="${esc(o.fee)}"></td>
+          <td><input name="active" type="checkbox" ${o.active !== false && o.name ? 'checked' : ''}></td>
+        </tr>`).join('')}</tbody>
+    </table>
+    <div class="form-grid" style="margin-top:14px">
+      <label>Стандарт хүргэлт үнэгүй болох дүн (₮, 0 = хэзээ ч үгүй)<input name="freeDeliveryFrom" type="number" min="0" step="1000" value="${esc(s.freeDeliveryFrom ?? 0)}"></label>
+      <label>Дэлгүүрийн утас ("Асуух" товч)<input name="shopPhone" value="${esc(s.shopPhone)}" placeholder="99112233"></label>
+      <label>Ажлын цаг<input name="workHours" value="${esc(s.workHours)}" placeholder="Даваа-Ням 10:00-20:00"></label>
+    </div>
+    <label class="meta">Дэлгүүрийн хаяг<textarea name="shopAddress">${esc(s.shopAddress)}</textarea></label>
+    <strong style="display:block; margin-top:18px">Оноо</strong>
+    <div class="form-grid" style="margin-top:10px">
+      <label>Хэдэн ₮ тутамд 1 оноо<input name="pointsPerAmount" type="number" min="1" value="${esc(s.pointsPerAmount ?? 1000)}"></label>
+      <label>1 оноо = хэдэн ₮<input name="pointValue" type="number" min="1" value="${esc(s.pointValue ?? 1)}"></label>
+      <label>Барааны дүнгийн хэдэн %-ийг оноогоор төлж болох<input name="pointsMaxPercent" type="number" min="0" max="100" value="${esc(s.pointsMaxPercent ?? 100)}"></label>
+    </div>
+    <strong style="display:block; margin-top:18px">Мессеж</strong>
+    <div class="form-grid" style="margin-top:10px">
+      <label>SMS-ийн эхэнд гарах нэр<input name="shopName" value="${esc(s.shopName ?? 'F5 Toys')}" maxlength="30"></label>
+    </div>
+    <label class="meta"><input type="checkbox" name="smsOnStatus" ${s.smsOnStatus !== false ? 'checked' : ''}> Захиалгын төлөв солигдоход хэрэглэгчид SMS илгээх (төлбөр, хүргэлт, цуцлалт)</label>
+    <div class="actions"><button class="btn">Тохиргоо хадгалах</button></div>
+    <p class="meta">Өөрчлөлт апп дээр шууд харагдана, апп дахин суулгах шаардлагагүй.</p>
   </form>`;
 }
 
@@ -201,8 +319,8 @@ function productsPanel() {
     <thead><tr><th></th><th>Нэр</th><th class="hide-sm">Ангилал</th><th>Үнэ</th><th>Үлдэгдэл</th><th></th></tr></thead>
     <tbody>${products.map((p) => `
       <tr style="${p.active === false ? 'opacity:.5' : ''}">
-        <td class="emoji">${esc(p.emoji)}</td>
-        <td>${esc(p.name)}</td>
+        <td class="emoji">${p.imageUrl ? `<img src="${esc(p.imageUrl)}" alt="" style="width:40px;height:40px;object-fit:contain;border-radius:8px">` : esc(p.emoji)}</td>
+        <td>${esc(p.name)}${p.pointsEligible ? ' <span class="pill PAID">оноо</span>' : ''}</td>
         <td class="hide-sm meta">${esc(p.category)}</td>
         <td>${fmt(p.price)}</td>
         <td style="${p.stock === 0 ? 'color:var(--warn);font-weight:700' : ''}">${p.stock}</td>
@@ -216,13 +334,31 @@ function render() {
   $app.innerHTML = `
     <header><h1>Тоглоомын дэлгүүр</h1>
       ${info ? `<span class="mode ${info.paymentMode}">${MODE[info.paymentMode] || info.paymentMode}</span>` : ''}
+      ${info?.sms === 'test' ? '<span class="mode">SMS туршилт</span>' : ''}
       <button class="btn ghost" id="logout">Гарах</button></header>
     <nav role="tablist">
       <button role="tab" aria-selected="${tab === 'orders'}" data-tab="orders">Захиалга</button>
       <button role="tab" aria-selected="${tab === 'products'}" data-tab="products">Бараа</button>
+      <button role="tab" aria-selected="${tab === 'customers'}" data-tab="customers">Хэрэглэгч</button>
+      <button role="tab" aria-selected="${tab === 'sms'}" data-tab="sms">Мессеж</button>
+      <button role="tab" aria-selected="${tab === 'settings'}" data-tab="settings">Тохиргоо</button>
     </nav>
-    <main><div class="panel">${tab === 'orders' ? ordersPanel() : productsPanel()}</div></main>`;
+    <main><div class="panel">${({ orders: ordersPanel, products: productsPanel, customers: customersPanel, sms: smsPanel, settings: settingsPanel })[tab]()}</div></main>`;
   bind();
+}
+
+// Зураг солиход маягтад бичсэн утгууд арилахгүй байлгах
+function keepForm() {
+  const f = document.getElementById('pform');
+  const vals = f ? Object.fromEntries([...f.elements].filter((x) => x.name).map((x) => [x.name, x.type === 'checkbox' ? x.checked : x.value])) : {};
+  render();
+  const g = document.getElementById('pform');
+  if (!g) return;
+  for (const [k, v] of Object.entries(vals)) {
+    const el = g.elements[k];
+    if (!el) continue;
+    if (el.type === 'checkbox') el.checked = v; else el.value = v;
+  }
 }
 
 function bind() {
@@ -231,25 +367,76 @@ function bind() {
   on('logout', 'onclick', () => { key = ''; localStorage.removeItem('adminKey'); render(); });
   on('filter', 'onchange', (e) => { filter = e.target.value; render(); });
   on('reload', 'onclick', () => load().then(() => toast('Шинэчлэгдлээ')).catch((e) => toast(e.message)));
-  on('padd', 'onclick', () => { editing = 'new'; render(); });
-  on('pcancel', 'onclick', () => { editing = null; render(); });
+  on('padd', 'onclick', () => { editing = 'new'; pendingImage = null; render(); });
+  on('pcancel', 'onclick', () => { editing = null; pendingImage = null; render(); });
+  on('pimgclear', 'onclick', () => { pendingImage = ''; keepForm(); });
+  on('pimg', 'onchange', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const st = document.getElementById('pimgstatus');
+    try {
+      st.textContent = 'Зураг байршуулж байна...';
+      const dataUrl = await resizeImage(file);
+      const r = await api('/api/admin/images', { method: 'POST', body: JSON.stringify({ dataUrl }) });
+      pendingImage = r.url;
+      keepForm();
+      toast('Зураг нэмэгдлээ');
+    } catch (er) { st.textContent = er.message; }
+  });
+  on('sform', 'onsubmit', async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const deliveryOptions = [...f.querySelectorAll('[data-opt]')].map((tr, i) => ({
+      id: tr.dataset.id || ['standard', 'fast', 'urgent'][i] || `opt${i}`,
+      name: tr.querySelector('[name=name]').value.trim(),
+      eta: tr.querySelector('[name=eta]').value.trim(),
+      fee: Number(tr.querySelector('[name=fee]').value || 0),
+      active: tr.querySelector('[name=active]').checked,
+    })).filter((o) => o.name);
+    const body = {
+      deliveryOptions,
+      freeDeliveryFrom: Number(f.freeDeliveryFrom.value || 0),
+      shopPhone: f.shopPhone.value.trim(), workHours: f.workHours.value.trim(), shopAddress: f.shopAddress.value.trim(),
+      pointsPerAmount: Number(f.pointsPerAmount.value || 1000), pointValue: Number(f.pointValue.value || 1),
+      pointsMaxPercent: Number(f.pointsMaxPercent.value || 0), shopName: f.shopName.value.trim(),
+      smsOnStatus: f.smsOnStatus.checked,
+    };
+    try { await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(body) }); await load(); toast('Тохиргоо хадгалагдлаа'); }
+    catch (er) { toast(er.message); }
+  });
   on('pform', 'onsubmit', async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
     const body = Object.fromEntries(f.entries());
-    body.price = Number(body.price); body.stock = Number(body.stock); body.active = f.has('active');
+    body.price = Number(body.price); body.stock = Number(body.stock);
+    body.active = f.has('active'); body.isNew = f.has('isNew'); body.pointsEligible = f.has('pointsEligible');
+    body.features = String(body.features || '').split('\n').map((l) => l.split('|'))
+      .map(([a, b]) => ({ value: (b === undefined ? '' : a).trim(), label: (b === undefined ? a : b).trim() }))
+      .filter((x) => x.value || x.label);
+    const current = products.find((x) => x.id === editing);
+    body.imageUrl = pendingImage ?? current?.imageUrl ?? '';
     try {
       await api(`/api/admin/products/${encodeURIComponent(editing)}`, { method: 'PUT', body: JSON.stringify(body) });
-      editing = null; await load(); toast('Хадгалагдлаа');
+      editing = null; pendingImage = null; await load(); toast('Хадгалагдлаа');
     } catch (er) { toast(er.message); }
   });
-  document.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { editing = b.dataset.edit; render(); window.scrollTo(0, 0); }));
+  document.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { editing = b.dataset.edit; pendingImage = null; render(); window.scrollTo(0, 0); }));
   document.querySelectorAll('[data-paid]').forEach((b) => (b.onclick = async () => {
     if (!confirm(`${b.dataset.paid} захиалгын төлбөр данс руу орсныг шалгасан уу?`)) return;
     try { await api(`/api/admin/orders/${encodeURIComponent(b.dataset.paid)}/mark-paid`, { method: 'POST' }); await load(); toast('Төлөгдсөн болголоо'); }
     catch (er) { toast(er.message); }
   }));
+  document.querySelectorAll('[data-pts]').forEach((b) => (b.onclick = async () => {
+    const id = b.dataset.pts;
+    const delta = Number(document.querySelector(`[data-pts-input="${id}"]`).value || 0);
+    if (!delta) return toast('Оноо оруулна уу');
+    const reason = prompt('Шалтгаан (хэрэглэгчид харагдана):', delta > 0 ? 'Урамшуулал' : 'Засвар');
+    if (reason === null) return;
+    try { await api(`/api/admin/customers/${encodeURIComponent(id)}/points`, { method: 'POST', body: JSON.stringify({ delta, reason }) }); await load(); toast('Оноо шинэчлэгдлээ'); }
+    catch (er) { toast(er.message); }
+  }));
   document.querySelectorAll('[data-ful]').forEach((s) => (s.onchange = async () => {
+    if (s.value === 'CANCELLED' && !confirm('Захиалгыг цуцлах уу? Ашигласан оноо буцаагдаж, олгосон оноо хасагдана.')) { render(); return; }
     try { await api(`/api/admin/orders/${encodeURIComponent(s.dataset.ful)}`, { method: 'PATCH', body: JSON.stringify({ fulfillment: s.value }) }); await load(); toast('Төлөв шинэчлэгдлээ'); }
     catch (er) { toast(er.message); }
   }));

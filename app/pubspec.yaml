@@ -1,7 +1,7 @@
 name: toy_shop
-description: Тоглоомын дэлгүүрийн апп (Android, iOS) — QPay төлбөртэй
+description: F5 Toys Mongolia — тоглоомын дэлгүүрийн апп
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ^3.6.0
@@ -13,6 +13,7 @@ dependencies:
   provider: ^6.1.2
   url_launcher: ^6.3.0
   shared_preferences: ^2.3.2
+  share_plus: ^13.0.0
 
 dev_dependencies:
   flutter_test:

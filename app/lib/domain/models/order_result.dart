@@ -84,6 +84,8 @@ class OrderResult {
     required this.total,
     required this.invoice,
     this.paymentMode = 'qpay',
+    this.pointsUsed = 0,
+    this.discount = 0,
   });
 
   final String orderId;
@@ -91,7 +93,11 @@ class OrderResult {
   final int deliveryFee;
   final int total;
   final PaymentInvoice invoice;
-  final String paymentMode; // qpay | manual | mock
+  final String paymentMode; // qpay | manual | mock | points
+  final int pointsUsed;
+  final int discount;
+
+  bool get paidByPoints => paymentMode == 'points';
 
   bool get isManual => paymentMode == 'manual';
 
@@ -103,5 +109,7 @@ class OrderResult {
         invoice:
             PaymentInvoice.fromJson(j['invoice'] as Map<String, dynamic>),
         paymentMode: (j['paymentMode'] ?? 'qpay') as String,
+        pointsUsed: (j['pointsUsed'] as num? ?? 0).toInt(),
+        discount: (j['discount'] as num? ?? 0).toInt(),
       );
 }

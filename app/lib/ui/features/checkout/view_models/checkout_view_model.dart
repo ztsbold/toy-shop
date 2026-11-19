@@ -24,13 +24,15 @@ class CheckoutViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<OrderResult?> submit(
-      List<CartItem> items, DeliveryInfo delivery) async {
+  Future<OrderResult?> submit(List<CartItem> items, DeliveryInfo delivery,
+      String deliveryOptionId,
+      {int pointsToUse = 0}) async {
     _submitting = true;
     _error = null;
     notifyListeners();
     try {
-      return await _repository.placeOrder(items, delivery);
+      return await _repository.placeOrder(items, delivery, deliveryOptionId,
+          pointsToUse: pointsToUse);
     } catch (e) {
       _error = e.toString();
       return null;

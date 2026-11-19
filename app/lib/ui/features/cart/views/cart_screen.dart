@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../../../config.dart' as config;
 import '../../../core/format.dart';
+import '../../../core/theme.dart';
 import '../../../core/toy_image.dart';
+import '../../../core/widgets.dart';
 import '../../checkout/views/checkout_screen.dart';
 import '../view_models/cart_view_model.dart';
 
@@ -13,130 +14,122 @@ class CartScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cart = context.watch<CartViewModel>();
-    final text = Theme.of(context).textTheme;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Сагс')),
       body: cart.isEmpty
-          ? const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('🛒', style: TextStyle(fontSize: 64)),
-                  SizedBox(height: 8),
-                  Text('Сагс хоосон байна'),
-                ],
-              ),
+          ? EmptyState(
+              icon: Icons.shopping_cart_outlined,
+              message: 'Сагс хоосон байна',
+              actionLabel: 'Тоглоом үзэх',
+              onAction: () => Navigator.maybePop(context),
             )
-          : Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 700),
-                child: ListView.separated(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: cart.items.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (_, i) {
-                    final item = cart.items[i];
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(10),
-                        child: Row(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: SizedBox(
-                                  width: 64,
-                                  height: 64,
-                                  child:
-                                      ToyImage(toy: item.toy, emojiSize: 32)),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(item.toy.name,
-                                      style: text.titleSmall,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis),
-                                  Text(formatMnt(item.subtotal),
-                                      style: text.titleMedium?.copyWith(
-                                          fontWeight: FontWeight.bold)),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: () =>
-                                  cart.setQty(item.toy.id, item.qty - 1),
-                              icon: Icon(item.qty == 1
-                                  ? Icons.delete_outline
-                                  : Icons.remove),
-                            ),
-                            Text('${item.qty}', style: text.titleMedium),
-                            IconButton(
-                              onPressed: item.qty < item.toy.stock
-                                  ? () =>
-                                      cart.setQty(item.toy.id, item.qty + 1)
-                                  : null,
-                              icon: const Icon(Icons.add),
-                            ),
-                          ],
-                        ),
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: cart.items.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (_, i) {
+                final item = cart.items[i];
+                final t = item.toy;
+                return Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppColors.line),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(children: [
+                    Container(
+                      width: 76,
+                      height: 76,
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppColors.sky,
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                    );
-                  },
-                ),
-              ),
+                      child: ToyImage(toy: t, emojiSize: 34),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(t.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w800, fontSize: 15)),
+                          if (t.subtitle.isNotEmpty)
+                            Text(t.subtitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 12.5, color: AppColors.muted)),
+                          const SizedBox(height: 4),
+                          Row(children: [
+                            Expanded(
+                              child: Text(formatMnt(item.subtotal),
+                                  style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.blue)),
+                            ),
+                            QuantityStepper(
+                              compact: true,
+                              value: item.qty,
+                              min: 0,
+                              max: t.stock,
+                              onChanged: (v) => cart.setQty(t.id, v),
+                            ),
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ]),
+                );
+              },
             ),
       bottomNavigationBar: cart.isEmpty
           ? null
-          : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _row('Барааны дүн', formatMnt(cart.subtotal)),
-                    _row(
-                        'Хүргэлт',
-                        cart.deliveryFee == 0
-                            ? 'Үнэгүй'
-                            : formatMnt(cart.deliveryFee)),
-                    if (cart.deliveryFee > 0)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          '${formatMnt(config.freeDeliveryFrom)}-с дээш захиалгад хүргэлт үнэгүй',
-                          style: text.bodySmall,
-                        ),
+          : DecoratedBox(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(top: BorderSide(color: AppColors.line)),
+              ),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Row(children: [
+                      const Expanded(
+                        child: Text('Барааны дүн',
+                            style: TextStyle(fontSize: 16)),
                       ),
-                    const Divider(),
-                    _row('Нийт', formatMnt(cart.total), bold: true),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const CheckoutScreen())),
-                      child: const Text('Захиалга өгөх'),
+                      Text(formatMnt(cart.subtotal),
+                          style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.blue)),
+                    ]),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Хүргэлтийн төрлийг дараагийн алхамд сонгоно.',
+                          style: TextStyle(color: AppColors.muted, fontSize: 13)),
                     ),
-                  ],
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const CheckoutScreen())),
+                        child: const Text('Захиалга өгөх'),
+                      ),
+                    ),
+                  ]),
                 ),
               ),
             ),
-    );
-  }
-
-  Widget _row(String label, String value, {bool bold = false}) {
-    final style = TextStyle(
-        fontWeight: bold ? FontWeight.bold : FontWeight.normal,
-        fontSize: bold ? 18 : 15);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [Text(label, style: style), Text(value, style: style)],
-      ),
     );
   }
 }

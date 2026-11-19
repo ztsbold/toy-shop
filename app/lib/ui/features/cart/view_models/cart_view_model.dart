@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 
-import '../../../../config.dart' as config;
 import '../../../../domain/models/cart_item.dart';
 import '../../../../domain/models/toy.dart';
 
@@ -11,9 +10,6 @@ class CartViewModel extends ChangeNotifier {
   bool get isEmpty => _items.isEmpty;
   int get count => _items.values.fold(0, (s, e) => s + e.qty);
   int get subtotal => _items.values.fold(0, (s, e) => s + e.subtotal);
-  int get deliveryFee =>
-      isEmpty || subtotal >= config.freeDeliveryFrom ? 0 : config.deliveryFee;
-  int get total => subtotal + deliveryFee;
 
   int qtyOf(String toyId) => _items[toyId]?.qty ?? 0;
 

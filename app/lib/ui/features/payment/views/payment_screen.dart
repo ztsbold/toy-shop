@@ -32,6 +32,8 @@ class _PaymentScreenState extends State<PaymentScreen>
         repository: context.read<ShopRepository>(), order: widget.order)
       ..addListener(_onChange)
       ..startPolling();
+    // Оноогоор бүрэн төлөгдсөн бол шууд шалгана
+    if (widget.order.paidByPoints) vm.check(silent: true);
   }
 
   // Банкны апп-аас буцаж ирэхэд шууд шалгана.
@@ -73,6 +75,18 @@ class _PaymentScreenState extends State<PaymentScreen>
     final order = widget.order;
     final inv = order.invoice;
     final text = Theme.of(context).textTheme;
+
+    if (order.paidByPoints) {
+      return const Scaffold(
+        body: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Оноогоор төлж байна...'),
+          ]),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('Төлбөр төлөх')),

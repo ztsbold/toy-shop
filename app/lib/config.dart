@@ -1,22 +1,22 @@
-/// Backend хаяг. Ажиллуулахдаа:
-///   flutter run --dart-define=API_URL=https://api.taniidelguur.mn
-/// Android эмулятор дээр компьютерийн localhost нь 10.0.2.2 байна.
+/// Backend хаяг. Build хийхдээ: --dart-define=API_URL=https://...
 const String apiBaseUrl =
     String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:3000');
 
-/// Апп дээр урьдчилан харуулах хүргэлтийн үнэ (эцсийн дүнг сервер тооцно).
-const int deliveryFee = 100;
-const int freeDeliveryFrom = 100000;
+/// Брэнд (толгой хэсэгт харагдана)
+const String brandMark = 'F5';
+const String brandName = 'TOYS MONGOLIA';
+const String brandTagline = 'Тоглоомын дэлгүүр';
 
-const List<String> districts = [
-  'Баянгол',
-  'Баянзүрх',
-  'Сонгинохайрхан',
-  'Сүхбаатар',
-  'Хан-Уул',
-  'Чингэлтэй',
-  'Налайх',
-  'Багануур',
-  'Багахангай',
-  'Орон нутаг',
-];
+/// Дүүрэг → хорооны тоо (2025 оны байдлаар)
+const Map<String, int> districts = {
+  'Баянгол': 34,
+  'Баянзүрх': 43,
+  'Сонгинохайрхан': 43,
+  'Сүхбаатар': 22,
+  'Хан-Уул': 25,
+  'Чингэлтэй': 24,
+  'Налайх': 8,
+  'Багануур': 5,
+  'Багахангай': 2,
+  'Орон нутаг': 0,
+};

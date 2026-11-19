@@ -2,37 +2,77 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { store } from './store.js';
+import { sendSms, SMS_PROVIDER } from './sms.js';
+import { issueToken, verifyToken, newOtpCode, hashOtp, sameHash } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const env = process.env;
 const PORT = Number(env.PORT || 3000);
-// Render өөрөө RENDER_EXTERNAL_URL-г тохируулдаг
 const PUBLIC_URL = env.PUBLIC_URL || env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
-// qpay | manual | mock
-const PAYMENT_MODE = (env.PAYMENT_MODE || 'mock').toLowerCase();
-const DELIVERY_FEE = Number(env.DELIVERY_FEE ?? 5000);
-const FREE_DELIVERY_FROM = Number(env.FREE_DELIVERY_FROM ?? 100000);
+const PAYMENT_MODE = (env.PAYMENT_MODE || 'mock').toLowerCase(); // qpay | manual | mock
 const ADMIN_KEY = env.ADMIN_KEY || '';
 const QPAY_BASE_URL = env.QPAY_BASE_URL || 'https://merchant-sandbox.qpay.mn';
+const rid = (p) => `${p}${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`;
+
+// ---------------- Дэлгүүрийн тохиргоо (/admin → Тохиргоо) ----------------
+const DEFAULT_SETTINGS = {
+  deliveryOptions: [
+    { id: 'standard', name: 'Стандарт хүргэлт', eta: '1-2 өдөр', fee: Number(env.DELIVERY_FEE ?? 5000), active: true },
+    { id: 'fast', name: 'Хурдан хүргэлт', eta: '24 цаг', fee: 10000, active: true },
+    { id: 'urgent', name: 'Яаралтай хүргэлт', eta: '2-4 цаг', fee: 20000, active: true },
+  ],
+  freeDeliveryFrom: Number(env.FREE_DELIVERY_FROM ?? 0),
+  shopPhone: '', shopAddress: '', workHours: '',
+  shopName: 'F5 Toys',
+  pointsPerAmount: 1000, // хэдэн ₮ тутамд 1 оноо
+  pointValue: 1, // 1 оноо = хэдэн ₮
+  pointsMaxPercent: 100, // оноогоор төлж болох барааны дүнгийн дээд хувь
+  smsOnStatus: true, // захиалгын төлөв солигдоход SMS илгээх
+};
+const getSettings = async () => ({ ...DEFAULT_SETTINGS, ...(await store.getSettings()) });
+
+function deliveryFeeFor(st, option, subtotal) {
+  if (option.id === 'standard' && st.freeDeliveryFrom > 0 && subtotal >= st.freeDeliveryFrom) return 0;
+  return option.fee;
+}
+
+const STATUS_TEXT = {
+  CREATED: 'Захиалга хүлээн авлаа',
+  PAID: 'Төлбөр баталгаажлаа',
+  PREPARING: 'Захиалгыг бэлтгэж байна',
+  SHIPPING: 'Захиалга хүргэлтэнд гарлаа',
+  DELIVERED: 'Захиалга хүргэгдлээ',
+  CANCELLED: 'Захиалга цуцлагдлаа',
+};
+
+/** Апп доторх мэдэгдэл + (тохиргооноос хамааран) SMS */
+async function notifyCustomer(order, status, extra = '') {
+  if (!order.customerId) return;
+  const st = await getSettings();
+  const title = STATUS_TEXT[status] ?? status;
+  const body = `${order.id} дугаартай захиалга. ${extra}`.trim();
+  try { await store.addNotification(order.customerId, title, body, order.id); } catch (e) { console.error(e); }
+  if (st.smsOnStatus && ['PAID', 'SHIPPING', 'DELIVERED', 'CANCELLED'].includes(status)) {
+    const c = await store.getCustomer(order.customerId);
+    if (c) await sendSms(c.phone, `${st.shopName}: ${title}. ${order.id}. ${extra}`.trim());
+  }
+}
 
 // ---------------- QPay v2 ----------------
 let qpayToken = null;
 let qpayTokenAt = 0;
-
 async function getToken(force = false) {
   if (!force && qpayToken && Date.now() - qpayTokenAt < 30 * 60 * 1000) return qpayToken;
   const basic = Buffer.from(`${env.QPAY_USERNAME}:${env.QPAY_PASSWORD}`).toString('base64');
-  const res = await fetch(`${QPAY_BASE_URL}/v2/auth/token`, {
-    method: 'POST', headers: { Authorization: `Basic ${basic}` },
-  });
+  const res = await fetch(`${QPAY_BASE_URL}/v2/auth/token`, { method: 'POST', headers: { Authorization: `Basic ${basic}` } });
   if (!res.ok) throw new Error(`QPay token: ${res.status} ${await res.text()}`);
   qpayToken = (await res.json()).access_token;
   qpayTokenAt = Date.now();
   return qpayToken;
 }
-
 async function qpayPost(p, body, retried = false) {
   const res = await fetch(`${QPAY_BASE_URL}${p}`, {
     method: 'POST',
@@ -44,10 +84,10 @@ async function qpayPost(p, body, retried = false) {
   return res.json();
 }
 
-// Төлбөрийн мэдээллийг апп руу нэг хэлбэрээр буцаана
 async function createPayment(order) {
   const base = { invoiceId: order.id, qrImage: '', qrText: '', shortUrl: '', banks: [], manual: null };
-  if (PAYMENT_MODE === 'qpay') {
+  if (order.paymentMode === 'points') return base;
+  if (order.paymentMode === 'qpay') {
     const inv = await qpayPost('/v2/invoice', {
       invoice_code: env.QPAY_INVOICE_CODE,
       sender_invoice_no: order.id,
@@ -57,22 +97,17 @@ async function createPayment(order) {
       callback_url: `${PUBLIC_URL}/api/qpay/callback?order_id=${encodeURIComponent(order.id)}`,
     });
     return {
-      ...base,
-      invoiceId: inv.invoice_id,
-      qrImage: inv.qr_image ?? '',
-      qrText: inv.qr_text ?? '',
+      ...base, invoiceId: inv.invoice_id, qrImage: inv.qr_image ?? '', qrText: inv.qr_text ?? '',
       shortUrl: inv.qPay_shortUrl ?? '',
       banks: (inv.urls ?? []).map((u) => ({ name: u.name, description: u.description, logo: u.logo, link: u.link })),
     };
   }
-  if (PAYMENT_MODE === 'manual') {
+  if (order.paymentMode === 'manual') {
     return {
       ...base,
       manual: {
-        bankName: env.BANK_NAME || '',
-        accountNumber: env.BANK_ACCOUNT || '',
-        accountHolder: env.BANK_ACCOUNT_HOLDER || '',
-        reference: order.id, // гүйлгээний утга
+        bankName: env.BANK_NAME || '', accountNumber: env.BANK_ACCOUNT || '',
+        accountHolder: env.BANK_ACCOUNT_HOLDER || '', reference: order.id,
         note: env.BANK_NOTE || 'Гүйлгээний утга дээр захиалгын дугаараа заавал бичнэ үү.',
       },
     };
@@ -82,21 +117,33 @@ async function createPayment(order) {
 
 async function isPaidAtProvider(order) {
   if (order.paymentMode === 'mock') return Date.now() - order.createdAt > 15000;
-  if (order.paymentMode !== 'qpay') return false; // manual: админ баталгаажуулна
+  if (order.paymentMode !== 'qpay') return false;
   const data = await qpayPost('/v2/payment/check', {
-    object_type: 'INVOICE', object_id: order.invoiceId,
-    offset: { page_number: 1, page_limit: 100 },
+    object_type: 'INVOICE', object_id: order.invoiceId, offset: { page_number: 1, page_limit: 100 },
   });
   const paid = (data.rows ?? []).filter((r) => r.payment_status === 'PAID')
     .reduce((s, r) => s + Number(r.payment_amount || 0), 0);
   return paid >= order.total || Number(data.paid_amount || 0) >= order.total;
 }
 
+/** Төлөгдсөн болгох: үлдэгдэл хасах, оноо олгох, мэдэгдэх (нэг л удаа) */
 async function markPaid(order) {
-  if (await store.markPaidOnce(order.id)) {
-    for (const it of order.items) await store.decrementStock(it.toyId, it.qty);
-    order.status = 'PAID';
+  if (!(await store.markPaidOnce(order.id))) return;
+  order.status = 'PAID';
+  for (const it of order.items) await store.decrementStock(it.toyId, it.qty);
+  let extra = '';
+  if (order.customerId) {
+    const st = await getSettings();
+    const discount = order.pointsUsed * st.pointValue;
+    const earned = Math.floor(Math.max(0, order.subtotal - discount) / st.pointsPerAmount);
+    if (earned > 0) {
+      await store.addPoints(order.customerId, earned, `Захиалга ${order.id}`, order.id);
+      await store.setPointsEarned(order.id, earned);
+      order.pointsEarned = earned;
+      extra = `${earned} оноо нэмэгдлээ.`;
+    }
   }
+  await notifyCustomer(order, 'PAID', extra);
 }
 
 async function refreshStatus(order) {
@@ -119,11 +166,13 @@ function validateDelivery(d) {
 }
 const clip = (v, n = 300) => String(v ?? '').slice(0, n);
 
-// ---------------- API ----------------
+// ---------------- Апп ----------------
 const app = express();
 app.set('trust proxy', 1);
 app.use(cors());
-app.use(express.json({ limit: '100kb' }));
+const jsonSmall = express.json({ limit: '100kb' });
+const jsonLarge = express.json({ limit: '6mb' });
+app.use((req, res, next) => (req.path === '/api/admin/images' ? jsonLarge : jsonSmall)(req, res, next));
 app.use('/admin', express.static(path.join(__dirname, 'public', 'admin')));
 
 const wrap = (fn) => (req, res) => fn(req, res).catch((e) => {
@@ -131,13 +180,118 @@ const wrap = (fn) => (req, res) => fn(req, res).catch((e) => {
   res.status(500).json({ error: 'Серверийн алдаа' });
 });
 
+function customerIdFrom(req) {
+  const h = req.get('authorization') || '';
+  return h.startsWith('Bearer ') ? verifyToken(h.slice(7)) : null;
+}
+function requireCustomer(req, res, next) {
+  req.customerId = customerIdFrom(req);
+  if (!req.customerId) return res.status(401).json({ error: 'Нэвтэрнэ үү' });
+  next();
+}
+
 app.get('/', (_req, res) => res.redirect('/admin/'));
-app.get('/health', (_req, res) => res.json({ ok: true, paymentMode: PAYMENT_MODE, storage: store.kind }));
+app.get('/health', (_req, res) => res.json({ ok: true, paymentMode: PAYMENT_MODE, sms: SMS_PROVIDER }));
+
+app.get('/api/config', wrap(async (_req, res) => {
+  const st = await getSettings();
+  res.json({
+    deliveryOptions: st.deliveryOptions.filter((o) => o.active !== false).map(({ id, name, eta, fee }) => ({ id, name, eta, fee })),
+    freeDeliveryFrom: st.freeDeliveryFrom,
+    shopPhone: st.shopPhone, shopAddress: st.shopAddress, workHours: st.workHours,
+    loyalty: { pointsPerAmount: st.pointsPerAmount, pointValue: st.pointValue, maxPercent: st.pointsMaxPercent },
+    paymentMode: PAYMENT_MODE,
+  });
+}));
+
+app.get('/images/:id', wrap(async (req, res) => {
+  const img = await store.getImage(req.params.id);
+  if (!img) return res.status(404).end();
+  res.set('Content-Type', img.mime);
+  res.set('Cache-Control', 'public, max-age=31536000, immutable');
+  res.send(img.data);
+}));
 
 app.get('/api/toys', wrap(async (_req, res) => {
   res.json((await store.listProducts()).map(({ active, ...p }) => p));
 }));
 
+// ---------- Нэвтрэлт (SMS код) ----------
+app.post('/api/auth/request-otp', wrap(async (req, res) => {
+  const phone = String(req.body?.phone ?? '').trim();
+  if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'Утасны дугаар буруу байна' });
+  const last = await store.lastSmsAt(phone);
+  const wait = Math.ceil((last + 60_000 - Date.now()) / 1000);
+  if (wait > 0) return res.status(429).json({ error: `${wait} секундын дараа дахин оролдоно уу`, retryAfter: wait });
+  if ((await store.countSmsSince(phone, Date.now() - 3600_000)) >= 5)
+    return res.status(429).json({ error: 'Хэт олон оролдлого. 1 цагийн дараа дахин оролдоно уу.' });
+  const st = await getSettings();
+  const code = newOtpCode();
+  await store.saveOtp(phone, hashOtp(phone, code), Date.now() + 5 * 60_000);
+  const ok = await sendSms(phone, `${st.shopName}: Таны нэвтрэх код ${code}. 5 минутын дотор оруулна уу.`, 'otp');
+  if (!ok) return res.status(502).json({ error: 'SMS илгээж чадсангүй. Дахин оролдоно уу.' });
+  res.json({ ok: true, retryAfter: 60, testMode: SMS_PROVIDER === 'test' });
+}));
+
+app.post('/api/auth/verify', wrap(async (req, res) => {
+  const phone = String(req.body?.phone ?? '').trim();
+  const code = String(req.body?.code ?? '').trim();
+  const otp = await store.getOtp(phone);
+  if (!otp || otp.expiresAt < Date.now()) return res.status(400).json({ error: 'Кодын хугацаа дууссан. Шинэ код авна уу.' });
+  if (otp.attempts >= 5) {
+    await store.deleteOtp(phone);
+    return res.status(429).json({ error: 'Хэт олон буруу оролдлого. Шинэ код авна уу.' });
+  }
+  if (!/^\d{6}$/.test(code) || !sameHash(hashOtp(phone, code), otp.codeHash)) {
+    await store.bumpOtpAttempts(phone);
+    return res.status(400).json({ error: 'Код буруу байна' });
+  }
+  await store.deleteOtp(phone);
+  let c = await store.getCustomerByPhone(phone);
+  const isNew = !c;
+  if (!c) c = await store.createCustomer(rid('c_'), phone, clip(req.body?.name, 80).trim());
+  res.json({ token: issueToken(c.id), customer: c, isNew });
+}));
+
+app.get('/api/me', requireCustomer, wrap(async (req, res) => {
+  const c = await store.getCustomer(req.customerId);
+  if (!c) return res.status(401).json({ error: 'Нэвтэрнэ үү' });
+  const notes = await store.listNotifications(c.id, 50);
+  res.json({ ...c, unread: notes.filter((n) => !n.read).length });
+}));
+
+app.patch('/api/me', requireCustomer, wrap(async (req, res) => {
+  const name = clip(req.body?.name, 80).trim();
+  if (!name) return res.status(400).json({ error: 'Нэр оруулна уу' });
+  await store.updateCustomerName(req.customerId, name);
+  res.json(await store.getCustomer(req.customerId));
+}));
+
+const orderView = (o) => ({
+  orderId: o.id, status: o.status, fulfillment: o.fulfillment, total: o.total,
+  subtotal: o.subtotal, deliveryFee: o.deliveryFee, createdAt: o.createdAt,
+  itemCount: o.items.reduce((n, i) => n + i.qty, 0), firstItem: o.items[0]?.name ?? '',
+  items: o.items.map(({ name, qty, price }) => ({ name, qty, price })),
+  deliveryOption: o.delivery?.deliveryOption?.name ?? '',
+  pointsUsed: o.pointsUsed, pointsEarned: o.pointsEarned,
+  history: [{ status: 'CREATED', at: o.createdAt }, ...(o.history ?? []).filter((h) => h.status !== 'CREATED')],
+});
+
+app.get('/api/me/orders', requireCustomer, wrap(async (req, res) => {
+  res.json((await store.listOrdersByCustomer(req.customerId)).map(orderView));
+}));
+app.get('/api/me/points', requireCustomer, wrap(async (req, res) => {
+  res.json(await store.listLedger(req.customerId));
+}));
+app.get('/api/me/notifications', requireCustomer, wrap(async (req, res) => {
+  res.json(await store.listNotifications(req.customerId));
+}));
+app.post('/api/me/notifications/read', requireCustomer, wrap(async (req, res) => {
+  await store.markNotificationsRead(req.customerId);
+  res.json({ ok: true });
+}));
+
+// ---------- Захиалга ----------
 app.post('/api/orders', wrap(async (req, res) => {
   const { items, delivery } = req.body ?? {};
   if (!Array.isArray(items) || items.length === 0 || items.length > 50)
@@ -152,47 +306,74 @@ app.post('/api/orders', wrap(async (req, res) => {
     if (!p || p.active === false) return res.status(400).json({ error: 'Бараа олдсонгүй' });
     if (!Number.isInteger(n) || n < 1) return res.status(400).json({ error: 'Тоо ширхэг буруу' });
     if (n > p.stock) return res.status(409).json({ error: `"${p.name}" үлдэгдэл ${p.stock} ширхэг байна` });
-    lines.push({ toyId: p.id, name: p.name, price: p.price, qty: n });
+    lines.push({ toyId: p.id, name: p.name, price: p.price, qty: n, pointsEligible: p.pointsEligible });
   }
   const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
-  const deliveryFee = subtotal >= FREE_DELIVERY_FROM ? 0 : DELIVERY_FEE;
+  const st = await getSettings();
+  const options = st.deliveryOptions.filter((o) => o.active !== false);
+  const option = options.find((o) => o.id === (req.body.deliveryOptionId || 'standard')) ?? options[0];
+  if (!option) return res.status(400).json({ error: 'Хүргэлтийн сонголт олдсонгүй' });
+  const deliveryFee = deliveryFeeFor(st, option, subtotal);
+
+  // Оноо ашиглах (зөвхөн нэвтэрсэн, "оноогоор авч болно" бараанд)
+  const customerId = customerIdFrom(req);
+  let pointsUsed = 0;
+  const wanted = Math.max(0, Math.floor(Number(req.body.pointsToUse) || 0));
+  if (customerId && wanted > 0) {
+    const c = await store.getCustomer(customerId);
+    const eligible = lines.filter((l) => l.pointsEligible).reduce((s, l) => s + l.price * l.qty, 0);
+    const cap = Math.floor((eligible * st.pointsMaxPercent) / 100 / st.pointValue);
+    pointsUsed = Math.min(wanted, cap, c?.points ?? 0);
+  }
+  const discount = pointsUsed * st.pointValue;
+  const total = Math.max(0, subtotal + deliveryFee - discount);
 
   const cleanDelivery = Object.fromEntries(
-    ['fullName', 'phone', 'extraPhone', 'district', 'khoroo', 'address', 'note',
-     'receiptType', 'companyRegister', 'email'].map((k) => [k, clip(delivery[k])]));
+    ['fullName', 'phone', 'district', 'khoroo', 'building', 'apartment', 'address', 'note',
+     'receiptType', 'companyRegister'].map((k) => [k, clip(delivery[k])]));
+  cleanDelivery.deliveryOption = { id: option.id, name: option.name, eta: option.eta, fee: deliveryFee };
 
+  const now = Date.now();
   const order = {
-    id: `TOY-${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 90 + 10)}`,
-    items: lines, delivery: cleanDelivery, subtotal, deliveryFee,
-    total: subtotal + deliveryFee, status: 'PENDING', fulfillment: 'NEW',
-    paymentMode: PAYMENT_MODE, createdAt: Date.now(),
+    id: `TOY-${now.toString(36).toUpperCase()}${crypto.randomInt(10, 99)}`,
+    items: lines, delivery: cleanDelivery, subtotal, deliveryFee, total,
+    status: 'PENDING', fulfillment: 'NEW', paymentMode: total === 0 ? 'points' : PAYMENT_MODE,
+    createdAt: now, customerId, pointsUsed, history: [],
   };
 
+  if (pointsUsed > 0 &&
+      (await store.addPoints(customerId, -pointsUsed, `Захиалга ${order.id}-д ашигласан`, order.id)) === null) {
+    return res.status(409).json({ error: 'Оноо хүрэлцэхгүй байна' });
+  }
   let payment;
   try {
     payment = await createPayment(order);
   } catch (e) {
     console.error(e);
+    if (pointsUsed > 0) await store.addPoints(customerId, pointsUsed, `Захиалга ${order.id} амжилтгүй, буцаалт`, order.id);
     return res.status(502).json({ error: 'Төлбөрийн нэхэмжлэх үүсгэж чадсангүй. Дахин оролдоно уу.' });
   }
   order.invoiceId = payment.invoiceId;
   await store.insertOrder(order);
+  await notifyCustomer(order, 'CREATED', pointsUsed ? `${pointsUsed} оноо ашиглалаа.` : '');
+  if (total === 0) await markPaid(order);
 
   res.status(201).json({
-    orderId: order.id, subtotal, deliveryFee, total: order.total,
-    paymentMode: PAYMENT_MODE, invoice: payment,
+    orderId: order.id, subtotal, deliveryFee, total, pointsUsed, discount,
+    paymentMode: order.paymentMode, invoice: payment,
   });
 }));
 
 app.get('/api/orders/:id/status', wrap(async (req, res) => {
   const order = await store.getOrder(req.params.id);
   if (!order) return res.status(404).json({ error: 'Захиалга олдсонгүй' });
-  let status = order.status;
-  try { status = await refreshStatus(order); } catch (e) { console.error(e); }
-  res.json({ orderId: order.id, status, fulfillment: order.fulfillment });
+  try { await refreshStatus(order); } catch (e) { console.error(e); }
+  const fresh = await store.getOrder(order.id);
+  const v = orderView(fresh);
+  delete v.items; // нэвтрээгүй хүнд барааны жагсаалтыг харуулахгүй
+  res.json(v);
 }));
 
-// QPay төлбөр орсны дараа дуудна → заавал payment/check-ээр баталгаажуулна
 app.all('/api/qpay/callback', async (req, res) => {
   try {
     const order = await store.getOrder(String(req.query.order_id ?? ''));
@@ -208,24 +389,61 @@ function requireAdmin(req, res, next) {
   next();
 }
 app.get('/api/admin/info', requireAdmin, (_req, res) =>
-  res.json({ paymentMode: PAYMENT_MODE, storage: store.kind }));
+  res.json({ paymentMode: PAYMENT_MODE, sms: SMS_PROVIDER }));
 
-app.get('/api/admin/orders', requireAdmin, wrap(async (_req, res) => res.json(await store.listOrders())));
+app.get('/api/admin/orders', requireAdmin, wrap(async (_req, res) => {
+  const orders = await store.listOrders();
+  const customers = new Map((await store.listCustomers()).map((c) => [c.id, c]));
+  res.json(orders.map((o) => ({ ...o, customer: o.customerId ? customers.get(o.customerId) ?? null : null })));
+}));
 
 app.post('/api/admin/orders/:id/mark-paid', requireAdmin, wrap(async (req, res) => {
   const order = await store.getOrder(req.params.id);
   if (!order) return res.status(404).json({ error: 'Захиалга олдсонгүй' });
+  if (order.fulfillment === 'CANCELLED') return res.status(400).json({ error: 'Цуцлагдсан захиалга' });
   await markPaid(order);
   res.json({ ok: true });
 }));
 
-const FULFILLMENT = ['NEW', 'SHIPPING', 'DELIVERED', 'CANCELLED'];
+const FULFILLMENT = ['NEW', 'PREPARING', 'SHIPPING', 'DELIVERED', 'CANCELLED'];
 app.patch('/api/admin/orders/:id', requireAdmin, wrap(async (req, res) => {
   const f = String(req.body?.fulfillment ?? '');
   if (!FULFILLMENT.includes(f)) return res.status(400).json({ error: 'Төлөв буруу' });
-  await store.setFulfillment(req.params.id, f);
+  const order = await store.getOrder(req.params.id);
+  if (!order) return res.status(404).json({ error: 'Захиалга олдсонгүй' });
+  if (order.fulfillment === 'CANCELLED') return res.status(400).json({ error: 'Цуцлагдсан захиалгыг өөрчлөх боломжгүй' });
+  if (!(await store.setFulfillment(order.id, f))) return res.json({ ok: true });
+
+  let extra = '';
+  if (f === 'CANCELLED') {
+    // Ашигласан оноог буцааж, олгосон оноог хасна; төлөгдсөн бол үлдэгдлийг сэргээнэ
+    if (order.customerId && order.pointsUsed > 0) {
+      await store.addPoints(order.customerId, order.pointsUsed, `Захиалга ${order.id} цуцлагдсан, буцаалт`, order.id);
+      extra = `${order.pointsUsed} оноо буцаагдлаа.`;
+    }
+    if (order.customerId && order.pointsEarned > 0) {
+      await store.addPoints(order.customerId, -order.pointsEarned, `Захиалга ${order.id} цуцлагдсан`, order.id, { allowPartial: true });
+    }
+    if (order.status === 'PAID') for (const it of order.items) await store.incrementStock(it.toyId, it.qty);
+  }
+  await notifyCustomer(order, f, extra);
   res.json({ ok: true });
 }));
+
+app.get('/api/admin/customers', requireAdmin, wrap(async (_req, res) => res.json(await store.listCustomers())));
+
+app.post('/api/admin/customers/:id/points', requireAdmin, wrap(async (req, res) => {
+  const delta = Math.trunc(Number(req.body?.delta) || 0);
+  const reason = clip(req.body?.reason || 'Админ засвар', 120);
+  if (!delta) return res.status(400).json({ error: 'Оноо оруулна уу' });
+  const bal = await store.addPoints(req.params.id, delta, reason, null);
+  if (bal === null) return res.status(400).json({ error: 'Үлдэгдэл хүрэлцэхгүй' });
+  const c = await store.getCustomer(req.params.id);
+  await store.addNotification(c.id, delta > 0 ? `${delta} оноо нэмэгдлээ` : `${-delta} оноо хасагдлаа`, reason);
+  res.json({ ok: true, points: bal });
+}));
+
+app.get('/api/admin/sms', requireAdmin, wrap(async (_req, res) => res.json(await store.listSms())));
 
 app.get('/api/admin/products', requireAdmin, wrap(async (_req, res) =>
   res.json(await store.listProducts({ includeInactive: true }))));
@@ -236,17 +454,59 @@ app.put('/api/admin/products/:id', requireAdmin, wrap(async (req, res) => {
   if (!String(b.name ?? '').trim()) return res.status(400).json({ error: 'Нэр оруулна уу' });
   if (!Number.isInteger(price) || price < 0) return res.status(400).json({ error: 'Үнэ буруу' });
   if (!Number.isInteger(stock) || stock < 0) return res.status(400).json({ error: 'Үлдэгдэл буруу' });
-  const id = req.params.id === 'new' ? `t${Date.now().toString(36)}` : req.params.id;
+  const id = req.params.id === 'new' ? rid('t') : req.params.id;
+  const features = (Array.isArray(b.features) ? b.features : []).slice(0, 4)
+    .map((f) => ({ value: clip(f?.value, 20), label: clip(f?.label, 30) }))
+    .filter((f) => f.value || f.label);
   await store.upsertProduct({
-    id, name: clip(b.name, 120), category: clip(b.category, 60), ageRange: clip(b.ageRange, 20),
+    id, name: clip(b.name, 120), subtitle: clip(b.subtitle, 120), sku: clip(b.sku, 40),
+    category: clip(b.category, 60), ageRange: clip(b.ageRange, 20),
     price, stock, emoji: clip(b.emoji || '🎁', 8), imageUrl: clip(b.imageUrl, 500),
-    description: clip(b.description, 2000), active: b.active !== false,
+    description: clip(b.description, 3000), isNew: !!b.isNew, pointsEligible: !!b.pointsEligible,
+    features, active: b.active !== false,
   });
   res.json({ ok: true, id });
 }));
 
+const IMAGE_TYPES = { 'image/jpeg': 1, 'image/png': 1, 'image/webp': 1 };
+app.post('/api/admin/images', requireAdmin, wrap(async (req, res) => {
+  const m = /^data:(image\/[a-z]+);base64,(.+)$/.exec(String(req.body?.dataUrl ?? ''));
+  if (!m || !IMAGE_TYPES[m[1]]) return res.status(400).json({ error: 'Зөвхөн JPG, PNG, WEBP зураг' });
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length > 3 * 1024 * 1024) return res.status(413).json({ error: 'Зураг 3MB-аас их байна' });
+  const id = crypto.randomBytes(12).toString('hex');
+  await store.saveImage(id, m[1], buf);
+  res.json({ url: `/images/${id}` });
+}));
+
+app.get('/api/admin/settings', requireAdmin, wrap(async (_req, res) => res.json(await getSettings())));
+
+app.put('/api/admin/settings', requireAdmin, wrap(async (req, res) => {
+  const b = req.body ?? {};
+  const int = (v, min, max, d) => {
+    const n = Math.round(Number(v));
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : d;
+  };
+  const opts = (Array.isArray(b.deliveryOptions) ? b.deliveryOptions : []).slice(0, 6).map((o, i) => ({
+    id: clip(o?.id || `opt${i}`, 30), name: clip(o?.name, 60), eta: clip(o?.eta, 40),
+    fee: int(o?.fee, 0, 10_000_000, 0), active: o?.active !== false,
+  })).filter((o) => o.name);
+  if (!opts.some((o) => o.active)) return res.status(400).json({ error: 'Дор хаяж нэг хүргэлтийн сонголт идэвхтэй байх ёстой' });
+  await store.saveSettings({
+    deliveryOptions: opts,
+    freeDeliveryFrom: int(b.freeDeliveryFrom, 0, 100_000_000, 0),
+    shopPhone: clip(b.shopPhone, 30), shopAddress: clip(b.shopAddress, 200), workHours: clip(b.workHours, 80),
+    shopName: clip(b.shopName || 'F5 Toys', 30),
+    pointsPerAmount: int(b.pointsPerAmount, 1, 10_000_000, 1000),
+    pointValue: int(b.pointValue, 1, 1_000_000, 1),
+    pointsMaxPercent: int(b.pointsMaxPercent, 0, 100, 100),
+    smsOnStatus: b.smsOnStatus !== false,
+  });
+  res.json({ ok: true });
+}));
+
 await store.init();
 app.listen(PORT, () => {
-  console.log(`Backend ${PUBLIC_URL} | төлбөр: ${PAYMENT_MODE} | өгөгдөл: ${store.kind}`);
+  console.log(`Backend ${PUBLIC_URL} | төлбөр: ${PAYMENT_MODE} | SMS: ${SMS_PROVIDER}`);
   if (!ADMIN_KEY) console.warn('ADMIN_KEY тохируулаагүй — админ хэсэг хаалттай.');
 });
