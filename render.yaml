@@ -25,6 +25,6 @@ services:
       - key: ADMIN_KEY          # автоматаар үүснэ → Environment цэснээс харна
         generateValue: true
       - key: DELIVERY_FEE
-        value: "5000"
+        value: "100"
       - key: FREE_DELIVERY_FROM
         value: "100000"
