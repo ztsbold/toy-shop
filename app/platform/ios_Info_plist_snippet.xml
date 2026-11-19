@@ -1,0 +1,11 @@
+<!-- ios/Runner/Info.plist -> <dict> дотор нэмнэ -->
+
+<key>CFBundleDisplayName</key>
+<string>Тоглоом</string>
+
+<!-- Зөвхөн туршилтын http серверт. Бодит хувилбарт HTTPS ашиглаад устгана. -->
+<key>NSAppTransportSecurity</key>
+<dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <true/>
+</dict>

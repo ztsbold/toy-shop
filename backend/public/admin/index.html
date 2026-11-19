@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Дэлгүүрийн удирдлага</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1E2A44; --muted: #5B6680; --bg: #F3F6FA; --surface: #FFFFFF;
+    --line: #DCE3EE; --sun: #FFC93C; --sun-ink: #4A3600;
+    --ok: #1F8A5B; --warn: #B4521A; --off: #8A93A6;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #E8EDF6; --muted: #A2ACC0; --bg: #121826; --surface: #1B2334;
+      --line: #2C3750; --sun: #FFC93C; --sun-ink: #2A1F00;
+      --ok: #4FD69C; --warn: #FF9B5E; --off: #7D869A;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Nunito, system-ui, sans-serif; background: var(--bg); color: var(--ink); line-height: 1.45; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 1.15rem; font-weight: 800; margin: 0; flex: 1; }
+  .mode { font-size: .8rem; padding: 3px 10px; border-radius: 999px; background: var(--sun); color: var(--sun-ink); font-weight: 700; }
+  .mode.qpay { background: var(--ok); color: #fff; }
+  nav { display: flex; gap: 4px; padding: 12px 20px 0; max-width: 960px; margin: 0 auto; }
+  nav button { border: 0; background: none; font: inherit; font-weight: 700; color: var(--muted); padding: 8px 14px; border-radius: 10px 10px 0 0; cursor: pointer; }
+  nav button[aria-selected="true"] { background: var(--surface); color: var(--ink); }
+  main { max-width: 960px; margin: 0 auto; padding: 0 20px 60px; }
+  .panel { background: var(--surface); border-radius: 0 14px 14px 14px; padding: 16px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+  select, input, textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  textarea { width: 100%; min-height: 70px; }
+  button.btn { font: inherit; font-weight: 700; border: 0; border-radius: 10px; padding: 8px 14px; cursor: pointer; background: var(--ink); color: var(--surface); }
+  button.btn.sun { background: var(--sun); color: var(--sun-ink); }
+  button.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
+  .order { border-top: 1px solid var(--line); padding: 12px 2px; }
+  .order:first-child { border-top: 0; }
+  .order-head { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; }
+  .order-id { font-weight: 800; }
+  .total { font-weight: 800; font-size: 1.05rem; text-align: right; }
+  .meta { color: var(--muted); font-size: .9rem; }
+  .pill { display: inline-block; font-size: .78rem; font-weight: 700; padding: 2px 9px; border-radius: 999px; border: 1px solid currentColor; }
+  .pill.PAID { color: var(--ok); } .pill.PENDING { color: var(--warn); }
+  details summary { cursor: pointer; color: var(--muted); font-size: .9rem; margin-top: 6px; }
+  .addr { white-space: pre-line; margin: 8px 0; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { text-align: left; padding: 8px 6px; border-top: 1px solid var(--line); vertical-align: middle; }
+  th { color: var(--muted); font-weight: 600; font-size: .85rem; border-top: 0; }
+  td input { width: 100%; }
+  .emoji { font-size: 1.6rem; }
+  .login { max-width: 380px; margin: 12vh auto; background: var(--surface); padding: 24px; border-radius: 16px; }
+  .login h2 { margin-top: 0; }
+  .login input { width: 100%; margin: 8px 0 14px; }
+  .empty { color: var(--muted); padding: 30px 0; text-align: center; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--surface); padding: 10px 18px; border-radius: 12px; font-weight: 700; display: none; }
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 10px; }
+  .form-grid label { display: flex; flex-direction: column; font-size: .85rem; color: var(--muted); gap: 4px; }
+  @media (max-width: 640px) { .hide-sm { display: none; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const FULFILL = { NEW: 'Шинэ', SHIPPING: 'Хүргэлтэнд гарсан', DELIVERED: 'Хүргэгдсэн', CANCELLED: 'Цуцалсан' };
+const MODE = { mock: 'Туршилтын төлбөр', manual: 'Дансаар шилжүүлэх', qpay: 'QPay' };
+let key = localStorage.getItem('adminKey') || '';
+let tab = 'orders', filter = 'PAID_NEW', orders = [], products = [], info = null, editing = null;
+
+const $app = document.getElementById('app');
+const fmt = (n) => Number(n).toLocaleString('en-US') + '₮';
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const when = (ms) => new Date(ms).toLocaleString('mn-MN', { dateStyle: 'short', timeStyle: 'short' });
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toast.t); toast.t = setTimeout(() => (t.style.display = 'none'), 2200);
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'x-admin-key': key, ...(opts.headers || {}) },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 401) { key = ''; localStorage.removeItem('adminKey'); render(); throw new Error(body.error || 'Нэвтрэх шаардлагатай'); }
+  if (!res.ok) throw new Error(body.error || 'Алдаа гарлаа');
+  return body;
+}
+
+function renderLogin(err = '') {
+  $app.innerHTML = `
+    <form class="login" id="login">
+      <h2>Дэлгүүрийн удирдлага</h2>
+      <label for="k">Админ түлхүүр</label>
+      <input id="k" type="password" autocomplete="current-password" required>
+      ${err ? `<p style="color:var(--warn)">${esc(err)}</p>` : ''}
+      <button class="btn" style="width:100%">Нэвтрэх</button>
+    </form>`;
+  document.getElementById('login').onsubmit = async (e) => {
+    e.preventDefault();
+    key = document.getElementById('k').value.trim();
+    try { info = await api('/api/admin/info'); localStorage.setItem('adminKey', key); await load(); }
+    catch (er) { renderLogin(er.message); }
+  };
+}
+
+async function load() {
+  [orders, products] = await Promise.all([api('/api/admin/orders'), api('/api/admin/products')]);
+  render();
+}
+
+function filteredOrders() {
+  return orders.filter((o) => {
+    if (filter === 'PAID_NEW') return o.status === 'PAID' && o.fulfillment === 'NEW';
+    if (filter === 'PENDING') return o.status === 'PENDING';
+    if (filter === 'ALL') return true;
+    return o.fulfillment === filter;
+  });
+}
+
+function orderHtml(o) {
+  const d = o.delivery || {};
+  const items = o.items.map((i) => `${esc(i.name)} × ${i.qty}`).join(', ');
+  const addr = [d.district, d.khoroo && `${d.khoroo}-р хороо`, d.address].filter(Boolean).join(', ');
+  return `
+  <div class="order">
+    <div class="order-head">
+      <div><span class="order-id">${esc(o.id)}</span>
+        <span class="pill ${o.status}">${o.status === 'PAID' ? 'Төлөгдсөн' : 'Төлбөр хүлээж буй'}</span></div>
+      <div class="total">${fmt(o.total)}</div>
+      <div class="meta">${esc(d.fullName)}, ${esc(d.phone)}${d.extraPhone ? ' / ' + esc(d.extraPhone) : ''}</div>
+      <div class="meta">${when(o.createdAt)}</div>
+    </div>
+    <div class="meta">${items}</div>
+    <details>
+      <summary>Хаяг, дэлгэрэнгүй</summary>
+      <div class="addr">${esc(addr)}${d.note ? '\nТайлбар: ' + esc(d.note) : ''}
+И-баримт: ${d.receiptType === 'company' ? 'Байгууллага, РД ' + esc(d.companyRegister) : 'Хувь хүн'}${d.email ? '\nИ-мэйл: ' + esc(d.email) : ''}
+Бараа ${fmt(o.subtotal)}, хүргэлт ${fmt(o.deliveryFee)}, төлбөрийн горим: ${esc(MODE[o.paymentMode] || o.paymentMode)}</div>
+    </details>
+    <div class="actions">
+      ${o.status === 'PENDING' && o.paymentMode !== 'qpay'
+        ? `<button class="btn sun" data-paid="${esc(o.id)}">Төлбөр орсон гэж батлах</button>` : ''}
+      <label class="meta">Хүргэлт:
+        <select data-ful="${esc(o.id)}">
+          ${Object.entries(FULFILL).map(([k, v]) => `<option value="${k}" ${o.fulfillment === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select></label>
+      <a class="meta" href="tel:${esc(d.phone)}">Залгах</a>
+    </div>
+  </div>`;
+}
+
+function ordersPanel() {
+  const list = filteredOrders();
+  const opts = { PAID_NEW: 'Илгээх ёстой', PENDING: 'Төлбөр хүлээж буй', SHIPPING: 'Хүргэлтэнд', DELIVERED: 'Хүргэгдсэн', CANCELLED: 'Цуцалсан', ALL: 'Бүгд' };
+  return `
+  <div class="toolbar">
+    <select id="filter" aria-label="Шүүлтүүр">${Object.entries(opts).map(([k, v]) => `<option value="${k}" ${filter === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+    <span class="meta">${list.length} захиалга</span>
+    <span style="flex:1"></span>
+    <button class="btn ghost" id="reload">Шинэчлэх</button>
+  </div>
+  ${list.length ? list.map(orderHtml).join('') : '<div class="empty">Энэ ангилалд захиалга алга.</div>'}`;
+}
+
+function productForm(p) {
+  const v = p || { name: '', category: '', ageRange: '', price: '', stock: '', emoji: '🎁', imageUrl: '', description: '', active: true };
+  return `
+  <form id="pform" class="panel" style="border:1px solid var(--line); border-radius:14px; margin-bottom:14px">
+    <strong>${p ? 'Бараа засах' : 'Шинэ бараа'}</strong>
+    <div class="form-grid" style="margin-top:10px">
+      <label>Нэр<input name="name" value="${esc(v.name)}" required></label>
+      <label>Ангилал<input name="category" value="${esc(v.category)}"></label>
+      <label>Нас<input name="ageRange" value="${esc(v.ageRange)}" placeholder="3+"></label>
+      <label>Үнэ (₮)<input name="price" type="number" min="0" step="1" value="${esc(v.price)}" required></label>
+      <label>Үлдэгдэл<input name="stock" type="number" min="0" step="1" value="${esc(v.stock)}" required></label>
+      <label>Emoji<input name="emoji" value="${esc(v.emoji)}" maxlength="8"></label>
+    </div>
+    <label class="meta">Зургийн холбоос (https://...)<input name="imageUrl" value="${esc(v.imageUrl)}" style="width:100%"></label>
+    <label class="meta">Тайлбар<textarea name="description">${esc(v.description)}</textarea></label>
+    <label class="meta"><input type="checkbox" name="active" ${v.active !== false ? 'checked' : ''}> Апп дээр харуулах</label>
+    <div class="actions"><button class="btn">Хадгалах</button><button type="button" class="btn ghost" id="pcancel">Болих</button></div>
+  </form>`;
+}
+
+function productsPanel() {
+  return `
+  ${editing !== null ? productForm(editing === 'new' ? null : products.find((p) => p.id === editing)) : `
+  <div class="toolbar"><button class="btn sun" id="padd">Бараа нэмэх</button></div>`}
+  <table>
+    <thead><tr><th></th><th>Нэр</th><th class="hide-sm">Ангилал</th><th>Үнэ</th><th>Үлдэгдэл</th><th></th></tr></thead>
+    <tbody>${products.map((p) => `
+      <tr style="${p.active === false ? 'opacity:.5' : ''}">
+        <td class="emoji">${esc(p.emoji)}</td>
+        <td>${esc(p.name)}</td>
+        <td class="hide-sm meta">${esc(p.category)}</td>
+        <td>${fmt(p.price)}</td>
+        <td style="${p.stock === 0 ? 'color:var(--warn);font-weight:700' : ''}">${p.stock}</td>
+        <td><button class="btn ghost" data-edit="${esc(p.id)}">Засах</button></td>
+      </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+function render() {
+  if (!key) return renderLogin();
+  $app.innerHTML = `
+    <header><h1>Тоглоомын дэлгүүр</h1>
+      ${info ? `<span class="mode ${info.paymentMode}">${MODE[info.paymentMode] || info.paymentMode}</span>` : ''}
+      <button class="btn ghost" id="logout">Гарах</button></header>
+    <nav role="tablist">
+      <button role="tab" aria-selected="${tab === 'orders'}" data-tab="orders">Захиалга</button>
+      <button role="tab" aria-selected="${tab === 'products'}" data-tab="products">Бараа</button>
+    </nav>
+    <main><div class="panel">${tab === 'orders' ? ordersPanel() : productsPanel()}</div></main>`;
+  bind();
+}
+
+function bind() {
+  document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => { tab = b.dataset.tab; editing = null; render(); }));
+  const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el[ev] = fn; };
+  on('logout', 'onclick', () => { key = ''; localStorage.removeItem('adminKey'); render(); });
+  on('filter', 'onchange', (e) => { filter = e.target.value; render(); });
+  on('reload', 'onclick', () => load().then(() => toast('Шинэчлэгдлээ')).catch((e) => toast(e.message)));
+  on('padd', 'onclick', () => { editing = 'new'; render(); });
+  on('pcancel', 'onclick', () => { editing = null; render(); });
+  on('pform', 'onsubmit', async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const body = Object.fromEntries(f.entries());
+    body.price = Number(body.price); body.stock = Number(body.stock); body.active = f.has('active');
+    try {
+      await api(`/api/admin/products/${encodeURIComponent(editing)}`, { method: 'PUT', body: JSON.stringify(body) });
+      editing = null; await load(); toast('Хадгалагдлаа');
+    } catch (er) { toast(er.message); }
+  });
+  document.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { editing = b.dataset.edit; render(); window.scrollTo(0, 0); }));
+  document.querySelectorAll('[data-paid]').forEach((b) => (b.onclick = async () => {
+    if (!confirm(`${b.dataset.paid} захиалгын төлбөр данс руу орсныг шалгасан уу?`)) return;
+    try { await api(`/api/admin/orders/${encodeURIComponent(b.dataset.paid)}/mark-paid`, { method: 'POST' }); await load(); toast('Төлөгдсөн болголоо'); }
+    catch (er) { toast(er.message); }
+  }));
+  document.querySelectorAll('[data-ful]').forEach((s) => (s.onchange = async () => {
+    try { await api(`/api/admin/orders/${encodeURIComponent(s.dataset.ful)}`, { method: 'PATCH', body: JSON.stringify({ fulfillment: s.value }) }); await load(); toast('Төлөв шинэчлэгдлээ'); }
+    catch (er) { toast(er.message); }
+  }));
+}
+
+(async () => {
+  if (!key) return render();
+  try { info = await api('/api/admin/info'); await load(); } catch { render(); }
+})();
+setInterval(() => { if (key && tab === 'orders' && editing === null) load().catch(() => {}); }, 60000);
+</script>
+</body>
+</html>

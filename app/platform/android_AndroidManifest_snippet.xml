@@ -1,0 +1,23 @@
+<!-- android/app/src/main/AndroidManifest.xml -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Интернэт (release build-д заавал) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:label="Тоглоомын дэлгүүр"
+        android:usesCleartextTraffic="true"
+        ...>
+        <!-- usesCleartextTraffic="true" нь зөвхөн http://10.0.2.2:3000 зэрэг
+             туршилтын серверт хэрэгтэй. Бодит хувилбарт HTTPS ашиглаад устгана. -->
+        ...
+    </application>
+
+    <!-- Банкны апп руу шилжих (https болон банкны scheme) -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+</manifest>

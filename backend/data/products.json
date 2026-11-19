@@ -1,0 +1,10 @@
+[
+  { "id": "t1", "name": "LEGO хотын цагдаагийн машин", "category": "Барилгын", "ageRange": "5+", "price": 89000, "stock": 12, "emoji": "🚓", "imageUrl": "", "description": "Цагдаагийн машин, 2 дүрс, 180 ширхэг хэсэгтэй барилгын тоглоом." },
+  { "id": "t2", "name": "Зөөлөн баавгай (40 см)", "category": "Зөөлөн", "ageRange": "0+", "price": 35000, "stock": 30, "emoji": "🧸", "imageUrl": "", "description": "Хүүхдэд аюулгүй материалаар хийсэн зөөлөн баавгай. Угааж болно." },
+  { "id": "t3", "name": "Удирдлагатай машин", "category": "Машин", "ageRange": "6+", "price": 65000, "stock": 8, "emoji": "🏎️", "imageUrl": "", "description": "2.4GHz удирдлагатай, цэнэглэдэг батарейтай, 20 км/ц хурдтай." },
+  { "id": "t4", "name": "Пазл 500 ширхэг", "category": "Оюуны", "ageRange": "8+", "price": 28000, "stock": 20, "emoji": "🧩", "imageUrl": "", "description": "Монголын байгалийн зурагтай 500 ширхэг пазл." },
+  { "id": "t5", "name": "Шатар (модон)", "category": "Оюуны", "ageRange": "6+", "price": 45000, "stock": 15, "emoji": "♟️", "imageUrl": "", "description": "Модон хайрцагтай, эвхэгддэг шатрын самбар." },
+  { "id": "t6", "name": "Хүүхэлдэйн байшин", "category": "Дүрийн", "ageRange": "3+", "price": 120000, "stock": 5, "emoji": "🏠", "imageUrl": "", "description": "3 давхар, тавилга болон 2 хүүхэлдэйтэй." },
+  { "id": "t7", "name": "Бөмбөг (хөл бөмбөг)", "category": "Спорт", "ageRange": "4+", "price": 22000, "stock": 40, "emoji": "⚽", "imageUrl": "", "description": "4-р хэмжээтэй, хүүхдэд зориулсан хөнгөн бөмбөг." },
+  { "id": "t8", "name": "Шагай (бүтэн иж бүрдэл)", "category": "Үндэсний", "ageRange": "5+", "price": 18000, "stock": 25, "emoji": "🦴", "imageUrl": "", "description": "Уламжлалт шагай, даавуун уутны хамт." }
+]

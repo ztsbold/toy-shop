@@ -1,0 +1,30 @@
+# Render Blueprint: New + → Blueprint → энэ репог сонгоход автоматаар үүснэ
+services:
+  - type: web
+    name: toy-shop-api
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL       # Neon-ий холболтын мөр
+        sync: false
+      - key: PAYMENT_MODE       # manual | qpay | mock
+        value: manual
+      - key: BANK_NAME
+        sync: false
+      - key: BANK_ACCOUNT
+        sync: false
+      - key: BANK_ACCOUNT_HOLDER
+        sync: false
+      - key: ADMIN_KEY          # автоматаар үүснэ → Environment цэснээс харна
+        generateValue: true
+      - key: DELIVERY_FEE
+        value: "5000"
+      - key: FREE_DELIVERY_FROM
+        value: "100000"
