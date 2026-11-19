@@ -1,0 +1,73 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['app/**', '.github/workflows/android-apk.yml']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: API_URL шалгах
+        run: |
+          if [ -z "${{ vars.API_URL }}" ]; then
+            echo "::error::Settings → Secrets and variables → Actions → Variables хэсэгт API_URL нэмнэ үү"
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Гарын үсгийн түлхүүр
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
+        run: |
+          mkdir -p ~/.android
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+          else
+            keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android \
+              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+              -validity 10000 -dname "CN=Toy Shop,O=Toy Shop,C=MN"
+            mkdir -p ../keystore-out
+            base64 -w0 ~/.android/debug.keystore > ../keystore-out/ANDROID_DEBUG_KEYSTORE_B64.txt
+          fi
+
+      - name: Android төсөл үүсгэх
+        run: |
+          flutter create --platforms=android --org mn.toyshop --project-name toy_shop .
+          rm -rf test
+          M=android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' $M || \
+            sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' $M
+          sed -i 's#android:label="toy_shop"#android:label="Тоглоомын дэлгүүр"#' $M
+
+      - run: flutter pub get
+
+      - name: APK build
+        run: flutter build apk --release --dart-define=API_URL=${{ vars.API_URL }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: toy-shop-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('keystore-out/*') != ''
+        with:
+          name: keystore
+          path: keystore-out/
