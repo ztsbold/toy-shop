@@ -36,16 +36,21 @@ jobs:
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
         run: |
-          mkdir -p ~/.android
+          mkdir -p ~/.android ../keystore-out
+          KS=~/.android/debug.keystore
           if [ -n "$KEYSTORE_B64" ]; then
-                echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
-          else
-            keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android \
-              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
-              -validity 10000 -dname "CN=Toy Shop,O=Toy Shop,C=MN"
-            mkdir -p ../keystore-out
-            base64 -w0 ~/.android/debug.keystore > ../keystore-out/ANDROID_DEBUG_KEYSTORE_B64.txt
+            printf '%s' "$KEYSTORE_B64" | tr -d ' \r\n\t' | base64 -d > "$KS" 2>/dev/null || true
+            if keytool -list -keystore "$KS" -storepass android -alias androiddebugkey >/dev/null 2>&1; then
+              echo "Хадгалсан түлхүүрийг ашиглалаа."
+              exit 0
+            fi
+            echo "::warning::ANDROID_DEBUG_KEYSTORE_B64 secret буруу байна. Шинэ түлхүүр үүсгэлээ - keystore artifact-аар secret-ээ солино уу."
+            rm -f "$KS"
           fi
+          keytool -genkeypair -keystore "$KS" -storepass android \
+            -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+            -validity 10000 -dname "CN=Toy Shop,O=Toy Shop,C=MN"
+          base64 -w0 "$KS" > ../keystore-out/ANDROID_DEBUG_KEYSTORE_B64.txt
 
       - name: Android төсөл үүсгэх
         run: |
