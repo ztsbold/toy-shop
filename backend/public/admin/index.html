@@ -26,7 +26,7 @@
   header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
   header h1 { font-size: 1.15rem; font-weight: 800; margin: 0; flex: 1; }
   .mode { font-size: .8rem; padding: 3px 10px; border-radius: 999px; background: var(--sun); color: var(--sun-ink); font-weight: 700; }
-  .mode.qpay { background: var(--ok); color: #fff; }
+  .mode.qpay, .mode.quickqr { background: var(--ok); color: #fff; }
   nav { display: flex; gap: 4px; padding: 12px 20px 0; max-width: 960px; margin: 0 auto; }
   nav button { border: 0; background: none; font: inherit; font-weight: 700; color: var(--muted); padding: 8px 14px; border-radius: 10px 10px 0 0; cursor: pointer; }
   nav button[aria-selected="true"] { background: var(--surface); color: var(--ink); }
@@ -71,9 +71,9 @@
 
 <script>
 const FULFILL = { NEW: 'Шинэ', PREPARING: 'Бэлтгэж байна', SHIPPING: 'Хүргэлтэнд гарсан', DELIVERED: 'Хүргэгдсэн', CANCELLED: 'Цуцалсан' };
-const MODE = { mock: 'Туршилтын төлбөр', manual: 'Дансаар шилжүүлэх', qpay: 'QPay', points: 'Оноогоор' };
+const MODE = { mock: 'Туршилтын төлбөр', manual: 'Дансаар шилжүүлэх', qpay: 'QPay', quickqr: 'QPay Quick QR', points: 'Оноогоор' };
 let key = localStorage.getItem('adminKey') || '';
-let tab = 'orders', filter = 'PAID_NEW', orders = [], products = [], info = null, editing = null, settings = null, pendingImage = null, customers = [], emailLog = [];
+let tab = 'orders', filter = 'PAID_NEW', orders = [], products = [], info = null, editing = null, settings = null, pendingImage = null, qrPending = null, customers = [], emailLog = [];
 
 const $app = document.getElementById('app');
 const fmt = (n) => Number(n).toLocaleString('en-US') + '₮';
@@ -152,7 +152,7 @@ function orderHtml(o) {
 Бараа ${fmt(o.subtotal)}, хүргэлт ${fmt(o.deliveryFee)}${o.pointsUsed ? `, оноо −${o.pointsUsed}` : ''}${o.pointsEarned ? `, олгосон оноо +${o.pointsEarned}` : ''}, төлбөрийн горим: ${esc(MODE[o.paymentMode] || o.paymentMode)}</div>
     </details>
     <div class="actions">
-      ${o.status === 'PENDING' && o.paymentMode !== 'qpay' && o.fulfillment !== 'CANCELLED'
+      ${o.status === 'PENDING' && !['qpay', 'quickqr'].includes(o.paymentMode) && o.fulfillment !== 'CANCELLED'
         ? `<button class="btn sun" data-paid="${esc(o.id)}">Төлбөр орсон гэж батлах</button>` : ''}
       <label class="meta">Хүргэлт:
         <select data-ful="${esc(o.id)}" ${o.fulfillment === 'CANCELLED' ? 'disabled' : ''}>
@@ -272,6 +272,54 @@ function emailPanel() {
     </tbody></table>` : '<div class="empty">Имэйл алга.</div>'}`;
 }
 
+// ---------- QPay Quick QR ----------
+let qqCities = null, qqDistricts = [], qqType = 'person', qqMsg = '';
+const pickCode = (o) => { const k = Object.keys(o).find((x) => /code/i.test(x)); return k ? o[k] : (o.id ?? ''); };
+const pickName = (o) => { const k = Object.keys(o).find((x) => /name/i.test(x)); return k ? o[k] : pickCode(o); };
+const asList = (d) => Array.isArray(d) ? d : (d?.rows ?? d?.data ?? d?.items ?? []);
+
+function qpayPanel() {
+  const s = settings || {};
+  const opt = (list, sel) => list.map((o) => `<option value="${esc(pickCode(o))}" ${String(pickCode(o)) === String(sel ?? '') ? 'selected' : ''}>${esc(pickName(o))}</option>`).join('');
+  const f = (name, label, ph = '') => `<label>${label}<input name="${name}" placeholder="${esc(ph)}" required></label>`;
+  return `
+  <strong>QPay Quick QR мерчант</strong>
+  <p class="meta">Render дээр QQ_USERNAME, QQ_PASSWORD, QQ_TERMINAL_ID тохируулсан байх шаардлагатай. Мерчантын id нь QR нэхэмжлэх үүсгэхэд ашиглагдана.</p>
+  <form id="qqidform" class="actions" style="margin-bottom:18px">
+    <label class="meta">Мерчантын id <input name="qqMerchantId" value="${esc(s.qqMerchantId)}" style="min-width:260px"></label>
+    <button class="btn">Хадгалах</button>
+    <button type="button" class="btn ghost" id="qqlist">QPay дээрх мерчантууд</button>
+  </form>
+  <div id="qqout" class="meta" style="white-space:pre-wrap; margin-bottom:14px">${esc(qqMsg)}</div>
+  <form id="qqform" class="panel" style="border:1px solid var(--line); border-radius:14px">
+    <strong>Шинээр бүртгүүлэх</strong>
+    <div class="actions" style="margin:8px 0">
+      <label class="meta"><input type="radio" name="type" value="person" ${qqType === 'person' ? 'checked' : ''}> Хувь хүн</label>
+      <label class="meta"><input type="radio" name="type" value="company" ${qqType === 'company' ? 'checked' : ''}> Байгууллага</label>
+    </div>
+    <div class="form-grid">
+      ${qqType === 'person'
+        ? f('register_number', 'Регистрийн дугаар', 'УБ99112233') + f('last_name', 'Овог') + f('first_name', 'Нэр')
+        : f('name', 'Байгууллагын нэр') + f('register_number', 'Байгууллагын регистр', '1234567')
+          + f('owner_register_no', 'Эзэмшигчийн регистр') + f('owner_last_name', 'Эзэмшигчийн овог') + f('owner_first_name', 'Эзэмшигчийн нэр')}
+      ${f('phone', 'Утас', '99112233')}${f('email', 'И-мэйл')}
+      <label>MCC код<input name="mcc_code" value="5945"></label>
+      <label>Хот / аймаг
+        <select name="city" id="qqcity" required>${qqCities ? '<option value="">Сонгоно уу</option>' + opt(qqCities) : '<option value="">Ачаалж байна...</option>'}</select></label>
+      <label>Сум / дүүрэг
+        <select name="district" required>${qqDistricts.length ? opt(qqDistricts) : '<option value="">Эхлээд хот сонгоно</option>'}</select></label>
+    </div>
+    <label class="meta">Хаяг<textarea name="address" required></textarea></label>
+    <div class="actions"><button class="btn sun">QPay-д бүртгүүлэх</button></div>
+  </form>`;
+}
+
+async function loadQqCities() {
+  try { qqCities = asList(await api('/api/admin/quickqr/cities')); }
+  catch (er) { qqCities = []; qqMsg = 'Хот/аймгийн жагсаалт авч чадсангүй: ' + er.message; }
+  render();
+}
+
 function settingsPanel() {
   const s = settings || { deliveryOptions: [] };
   const rows = [...s.deliveryOptions];
@@ -296,6 +344,24 @@ function settingsPanel() {
       <label>Ажлын цаг<input name="workHours" value="${esc(s.workHours)}" placeholder="Даваа-Ням 10:00-20:00"></label>
     </div>
     <label class="meta">Дэлгүүрийн хаяг<textarea name="shopAddress">${esc(s.shopAddress)}</textarea></label>
+    <strong style="display:block; margin-top:18px">Төлбөр хүлээн авах данс</strong>
+    <p class="meta">Хэрэглэгч дансаар шилжүүлэх үед апп дээр харагдана. Хоосон бол Render-ийн BANK_* утгыг ашиглана.</p>
+    <div class="form-grid" style="margin-top:10px">
+      <label>Банк<input name="bankName" value="${esc(s.bankName)}" placeholder="Хаан банк"></label>
+      <label>Дансны дугаар<input name="bankAccount" value="${esc(s.bankAccount)}"></label>
+      <label>Хүлээн авагчийн нэр<input name="bankAccountHolder" value="${esc(s.bankAccountHolder)}"></label>
+    </div>
+    <div style="display:flex; gap:14px; align-items:center; margin:10px 0">
+      <div style="width:120px; height:120px; border-radius:12px; background:var(--bg); display:grid; place-items:center; overflow:hidden; flex:none">
+        ${qrPending ?? s.paymentQrUrl ? `<img src="${esc(qrPending ?? s.paymentQrUrl)}" alt="Төлбөрийн QR" style="width:100%;height:100%;object-fit:contain;background:#fff">` : '<span class="meta">QR алга</span>'}
+      </div>
+      <div>
+        <label class="btn ghost" style="display:inline-block">QR зураг сонгох
+          <input type="file" id="qrimg" accept="image/*" style="display:none"></label>
+        ${(qrPending ?? s.paymentQrUrl) ? '<button type="button" class="btn ghost" id="qrclear">Хасах</button>' : ''}
+        <div class="meta" id="qrstatus" style="margin-top:6px">Банкны аппаасаа дансныхаа QR кодыг (жишээ нь "Миний QR") screenshot хийж оруулна.<br>Хадгалах товч дарахыг мартуузай.</div>
+      </div>
+    </div>
     <strong style="display:block; margin-top:18px">Оноо</strong>
     <div class="form-grid" style="margin-top:10px">
       <label>Хэдэн ₮ тутамд 1 оноо<input name="pointsPerAmount" type="number" min="1" value="${esc(s.pointsPerAmount ?? 1000)}"></label>
@@ -343,8 +409,9 @@ function render() {
       <button role="tab" aria-selected="${tab === 'customers'}" data-tab="customers">Хэрэглэгч</button>
       <button role="tab" aria-selected="${tab === 'email'}" data-tab="email">Имэйл</button>
       <button role="tab" aria-selected="${tab === 'settings'}" data-tab="settings">Тохиргоо</button>
+      <button role="tab" aria-selected="${tab === 'qpay'}" data-tab="qpay">QPay</button>
     </nav>
-    <main><div class="panel">${({ orders: ordersPanel, products: productsPanel, customers: customersPanel, email: emailPanel, settings: settingsPanel })[tab]()}</div></main>`;
+    <main><div class="panel">${({ orders: ordersPanel, products: productsPanel, customers: customersPanel, email: emailPanel, settings: settingsPanel, qpay: qpayPanel })[tab]()}</div></main>`;
   bind();
 }
 
@@ -362,8 +429,58 @@ function keepForm() {
   }
 }
 
+function keepSettingsForm() {
+  const f = document.getElementById('sform');
+  const vals = f ? [...f.querySelectorAll('input, textarea')].filter((x) => x.type !== 'file').map((x) => [x, x.type === 'checkbox' ? x.checked : x.value]) : [];
+  const idx = vals.map(([x]) => [...f.querySelectorAll('input, textarea')].indexOf(x));
+  render();
+  const g = document.getElementById('sform');
+  if (!g) return;
+  const all = [...g.querySelectorAll('input, textarea')];
+  vals.forEach(([x, v], i) => { const el = all[idx[i]]; if (!el || el.type === 'file') return; if (el.type === 'checkbox') el.checked = v; else el.value = v; });
+}
+
 function bind() {
-  document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => { tab = b.dataset.tab; editing = null; render(); }));
+  document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => {
+    tab = b.dataset.tab; editing = null; render();
+    if (tab === 'qpay' && qqCities === null) loadQqCities();
+  }));
+  on('qqidform', 'onsubmit', async (e) => {
+    e.preventDefault();
+    try {
+      await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify({ ...settings, qqMerchantId: e.target.qqMerchantId.value.trim() }) });
+      await load(); toast('Мерчантын id хадгалагдлаа');
+    } catch (er) { toast(er.message); }
+  });
+  on('qqlist', 'onclick', async () => {
+    try { qqMsg = JSON.stringify(await api('/api/admin/quickqr/merchants'), null, 2); }
+    catch (er) { qqMsg = 'Алдаа: ' + er.message; }
+    render();
+  });
+  document.querySelectorAll('#qqform [name=type]').forEach((r) => (r.onchange = () => { qqType = r.value; render(); }));
+  on('qqcity', 'onchange', async (e) => {
+    const code = e.target.value;
+    qqDistricts = [];
+    if (code) {
+      try { qqDistricts = asList(await api(`/api/admin/quickqr/districts/${encodeURIComponent(code)}`)); }
+      catch (er) { toast(er.message); }
+    }
+    const f = document.getElementById('qqform');
+    const vals = Object.fromEntries([...new FormData(f).entries()]);
+    render();
+    const g = document.getElementById('qqform');
+    for (const [k, v] of Object.entries(vals)) { const el = g.elements[k]; if (el && el.type !== 'radio') el.value = v; }
+  });
+  on('qqform', 'onsubmit', async (e) => {
+    e.preventDefault();
+    const body = Object.fromEntries([...new FormData(e.target).entries()]);
+    if (!confirm('Эдгээр мэдээллээр QPay-д мерчант бүртгүүлэх үү?')) return;
+    try {
+      const m = await api('/api/admin/quickqr/merchant', { method: 'POST', body: JSON.stringify(body) });
+      qqMsg = `Амжилттай! Мерчантын id: ${m.id}\n\n` + JSON.stringify(m, null, 2);
+      await load(); toast('Мерчант бүртгэгдлээ');
+    } catch (er) { qqMsg = 'Алдаа: ' + er.message; render(); }
+  });
   const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el[ev] = fn; };
   on('logout', 'onclick', () => { key = ''; localStorage.removeItem('adminKey'); render(); });
   on('filter', 'onchange', (e) => { filter = e.target.value; render(); });
@@ -384,6 +501,20 @@ function bind() {
       toast('Зураг нэмэгдлээ');
     } catch (er) { st.textContent = er.message; }
   });
+  // QR зургийг шахахгүй (уншигдахаа болихоос сэргийлж PNG-ээр хадгална)
+  on('qrimg', 'onchange', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const st = document.getElementById('qrstatus');
+    try {
+      if (file.size > 3 * 1024 * 1024) throw new Error('Зураг 3MB-аас бага байх ёстой');
+      st.textContent = 'Байршуулж байна...';
+      const dataUrl = await new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = bad; r.readAsDataURL(file); });
+      const r = await api('/api/admin/images', { method: 'POST', body: JSON.stringify({ dataUrl }) });
+      qrPending = r.url; keepSettingsForm(); toast('QR нэмэгдлээ. "Тохиргоо хадгалах" дарна уу.');
+    } catch (er) { st.textContent = er.message; }
+  });
+  on('qrclear', 'onclick', () => { qrPending = ''; keepSettingsForm(); });
   on('sform', 'onsubmit', async (e) => {
     e.preventDefault();
     const f = e.target;
@@ -401,8 +532,12 @@ function bind() {
       pointsPerAmount: Number(f.pointsPerAmount.value || 1000), pointValue: Number(f.pointValue.value || 1),
       pointsMaxPercent: Number(f.pointsMaxPercent.value || 0), shopName: f.shopName.value.trim(),
       emailOnStatus: f.emailOnStatus.checked,
+      bankName: f.bankName.value.trim(), bankAccount: f.bankAccount.value.trim(),
+      bankAccountHolder: f.bankAccountHolder.value.trim(),
+      paymentQrUrl: qrPending ?? settings.paymentQrUrl ?? '',
+      qqMerchantId: settings.qqMerchantId ?? '',
     };
-    try { await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(body) }); await load(); toast('Тохиргоо хадгалагдлаа'); }
+    try { await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(body) }); qrPending = null; await load(); toast('Тохиргоо хадгалагдлаа'); }
     catch (er) { toast(er.message); }
   });
   on('pform', 'onsubmit', async (e) => {
