@@ -1,7 +1,7 @@
 name: toy_shop
 description: F5 Toys Mongolia — тоглоомын дэлгүүрийн апп
 publish_to: 'none'
-version: 1.1.0+2
+version: 1.2.0+3
 
 environment:
   sdk: ^3.6.0
@@ -19,6 +19,15 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.0
 
 flutter:
   uses-material-design: true
+
+# Утасны нүүрэн дээрх лого. Солих бол assets/icon/ доторх 2 PNG-г (1024×1024) солино.
+flutter_launcher_icons:
+  android: true
+  ios: false   # iOS build хийх үед true болгоно
+  image_path: "assets/icon/icon.png"
+  adaptive_icon_background: "#1558E0"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
