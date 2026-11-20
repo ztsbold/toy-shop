@@ -2,6 +2,7 @@
 //   EMAIL_PROVIDER=test (анхдагч): бодит имэйл явахгүй, админ хуудасны "Имэйл" табд харагдана
 //   EMAIL_PROVIDER=brevo  + BREVO_API_KEY  + EMAIL_FROM (Brevo-д баталгаажуулсан илгээгч)
 //   EMAIL_PROVIDER=resend + RESEND_API_KEY + EMAIL_FROM (Resend-д баталгаажуулсан домэйн дээрх хаяг)
+//   EMAIL_PROVIDER=gmail  + GMAIL_SCRIPT_URL + GMAIL_SCRIPT_SECRET (өөрийн Gmail дээрх Google Apps Script)
 import { store } from './store.js';
 
 const env = process.env;
@@ -41,6 +42,18 @@ async function viaResend(to, subject, html, text) {
   if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 300)}`);
 }
 
+// Өөрийн Gmail-ээр Google Apps Script вэб апп дамжуулж илгээнэ (утас, домэйн шаардахгүй)
+async function viaGmailScript(to, subject, html, text) {
+  const res = await fetch(env.GMAIL_SCRIPT_URL || '', {
+    method: 'POST',
+    headers: { 'content-type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ secret: env.GMAIL_SCRIPT_SECRET || '', to, subject, html, text, name: FROM_NAME }),
+    redirect: 'follow',
+  });
+  const body = (await res.text()).trim();
+  if (!res.ok || body !== 'OK') throw new Error(`Gmail script ${res.status}: ${body.slice(0, 300)}`);
+}
+
 /**
  * Имэйл илгээнэ. Алдаа шидэхгүй; үр дүнг лог-д хадгална. Амжилттай бол true.
  * kind: 'otp' (нэвтрэх код — хязгаарлалтад тооцогдоно) эсвэл 'info'
@@ -50,6 +63,7 @@ export async function sendEmail(to, subject, { html, text }, kind = 'info') {
   try {
     if (EMAIL_PROVIDER === 'brevo') { await viaBrevo(to, subject, html, text); status = 'sent'; }
     else if (EMAIL_PROVIDER === 'resend') { await viaResend(to, subject, html, text); status = 'sent'; }
+    else if (EMAIL_PROVIDER === 'gmail') { await viaGmailScript(to, subject, html, text); status = 'sent'; }
   } catch (e) {
     console.error('Имэйл алдаа:', e.message);
     status = 'failed';
