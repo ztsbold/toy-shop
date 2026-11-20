@@ -59,9 +59,12 @@ jobs:
           M=android/app/src/main/AndroidManifest.xml
           grep -q 'android.permission.INTERNET' $M || \
             sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' $M
-          sed -i 's#android:label="toy_shop"#android:label="Тоглоомын дэлгүүр"#' $M
+          sed -i 's#android:label="toy_shop"#android:label="F5 Toys"#' $M
 
       - run: flutter pub get
+
+      - name: Аппын лого
+        run: dart run flutter_launcher_icons
 
       - name: APK build
         run: flutter build apk --release --dart-define=API_URL=${{ vars.API_URL }}
