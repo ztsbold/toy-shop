@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { store } from './store.js';
+import { createQuickQrInvoice, isQuickQrPaid, cancelQuickQrInvoice, listCities, listDistricts, createMerchant, listMerchants } from './quickqr.js';
 import { sendEmail, emailHtml, EMAIL_PROVIDER } from './mailer.js';
 import { issueToken, verifyToken, newOtpCode, hashOtp, sameHash } from './auth.js';
 
@@ -12,7 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const env = process.env;
 const PORT = Number(env.PORT || 3000);
 const PUBLIC_URL = env.PUBLIC_URL || env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
-const PAYMENT_MODE = (env.PAYMENT_MODE || 'mock').toLowerCase(); // qpay | manual | mock
+const PAYMENT_MODE = (env.PAYMENT_MODE || 'mock').toLowerCase(); // quickqr | qpay | manual | mock
 const ADMIN_KEY = env.ADMIN_KEY || '';
 const QPAY_BASE_URL = env.QPAY_BASE_URL || 'https://merchant-sandbox.qpay.mn';
 const rid = (p) => `${p}${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`;
@@ -31,6 +32,9 @@ const DEFAULT_SETTINGS = {
   pointValue: 1, // 1 оноо = хэдэн ₮
   pointsMaxPercent: 100, // оноогоор төлж болох барааны дүнгийн дээд хувь
   emailOnStatus: true, // захиалгын төлөв солигдоход имэйл илгээх
+  bankName: '', bankAccount: '', bankAccountHolder: '',
+  paymentQrUrl: '', // банкны апп-аар уншуулах QR зураг (/images/...)
+  qqMerchantId: '', // QPay Quick QR мерчантын id (хоосон бол QQ_MERCHANT_ID)
 };
 const getSettings = async () => ({ ...DEFAULT_SETTINGS, ...(await store.getSettings()) });
 
@@ -93,6 +97,11 @@ async function qpayPost(p, body, retried = false) {
 async function createPayment(order) {
   const base = { invoiceId: order.id, qrImage: '', qrText: '', shortUrl: '', banks: [], manual: null };
   if (order.paymentMode === 'points') return base;
+  if (order.paymentMode === 'quickqr') {
+    const callback = `${PUBLIC_URL}/api/qpay/callback?order_id=${encodeURIComponent(order.id)}`;
+    const st = await getSettings();
+    return { ...base, ...(await createQuickQrInvoice(order, callback, st.qqMerchantId)) };
+  }
   if (order.paymentMode === 'qpay') {
     const inv = await qpayPost('/v2/invoice', {
       invoice_code: env.QPAY_INVOICE_CODE,
@@ -109,12 +118,17 @@ async function createPayment(order) {
     };
   }
   if (order.paymentMode === 'manual') {
+    // Дансны мэдээлэл ба QR-ийг /admin → Тохиргооноос, хоосон бол Render-ийн утгаас авна
+    const st = await getSettings();
     return {
       ...base,
       manual: {
-        bankName: env.BANK_NAME || '', accountNumber: env.BANK_ACCOUNT || '',
-        accountHolder: env.BANK_ACCOUNT_HOLDER || '', reference: order.id,
+        bankName: st.bankName || env.BANK_NAME || '',
+        accountNumber: st.bankAccount || env.BANK_ACCOUNT || '',
+        accountHolder: st.bankAccountHolder || env.BANK_ACCOUNT_HOLDER || '',
+        reference: order.id,
         note: env.BANK_NOTE || 'Гүйлгээний утга дээр захиалгын дугаараа заавал бичнэ үү.',
+        qrImageUrl: st.paymentQrUrl ? `${PUBLIC_URL}${st.paymentQrUrl}` : '',
       },
     };
   }
@@ -123,6 +137,7 @@ async function createPayment(order) {
 
 async function isPaidAtProvider(order) {
   if (order.paymentMode === 'mock') return Date.now() - order.createdAt > 15000;
+  if (order.paymentMode === 'quickqr') return isQuickQrPaid(order.invoiceId, order.total);
   if (order.paymentMode !== 'qpay') return false;
   const data = await qpayPost('/v2/payment/check', {
     object_type: 'INVOICE', object_id: order.invoiceId, offset: { page_number: 1, page_limit: 100 },
@@ -196,6 +211,15 @@ function requireCustomer(req, res, next) {
   next();
 }
 
+// Вэб апп (GitHub Actions build хийж backend/public/web-д хийнэ). Байхгүй бол админ руу.
+const WEB_DIR = path.join(__dirname, 'public', 'web');
+app.use('/', express.static(WEB_DIR, {
+  index: 'index.html',
+  // Шинэ хувилбар гарахад хэрэглэгчид хуучныг харахгүй байх
+  setHeaders: (res, file) => {
+    if (/\.(html|js|json)$/.test(file)) res.set('Cache-Control', 'no-cache');
+  },
+}));
 app.get('/', (_req, res) => res.redirect('/admin/'));
 app.get('/health', (_req, res) => res.json({ ok: true, paymentMode: PAYMENT_MODE, email: EMAIL_PROVIDER }));
 
@@ -443,6 +467,10 @@ app.patch('/api/admin/orders/:id', requireAdmin, wrap(async (req, res) => {
 
   let extra = '';
   if (f === 'CANCELLED') {
+    // Төлөгдөөгүй QR нэхэмжлэхийг QPay дээр цуцалж, хэрэглэгч андуурч төлөхөөс сэргийлнэ
+    if (order.paymentMode === 'quickqr' && order.status === 'PENDING' && order.invoiceId) {
+      try { await cancelQuickQrInvoice(order.invoiceId); } catch (e) { console.error(e.message); }
+    }
     // Ашигласан оноог буцааж, олгосон оноог хасна; төлөгдсөн бол үлдэгдлийг сэргээнэ
     if (order.customerId && order.pointsUsed > 0) {
       await store.addPoints(order.customerId, order.pointsUsed, `Захиалга ${order.id} цуцлагдсан, буцаалт`, order.id);
@@ -511,6 +539,31 @@ app.post('/api/admin/images', requireAdmin, wrap(async (req, res) => {
   res.json({ url: `/images/${id}` });
 }));
 
+// ---------- QPay Quick QR мерчант бүртгэл ----------
+const qqWrap = (fn) => wrap(async (req, res) => {
+  try { await fn(req, res); }
+  catch (e) { console.error(e.message); res.status(502).json({ error: e.message }); }
+});
+app.get('/api/admin/quickqr/cities', requireAdmin, qqWrap(async (_req, res) => res.json(await listCities())));
+app.get('/api/admin/quickqr/districts/:city', requireAdmin, qqWrap(async (req, res) => res.json(await listDistricts(req.params.city))));
+app.get('/api/admin/quickqr/merchants', requireAdmin, qqWrap(async (_req, res) => res.json(await listMerchants())));
+app.post('/api/admin/quickqr/merchant', requireAdmin, qqWrap(async (req, res) => {
+  const b = req.body ?? {};
+  const type = b.type === 'company' ? 'company' : 'person';
+  const f = Object.fromEntries(Object.entries(b).map(([k, v]) => [k, clip(v, 200).trim()]));
+  const need = type === 'company'
+    ? ['register_number', 'name', 'owner_register_no', 'owner_first_name', 'owner_last_name']
+    : ['register_number', 'first_name', 'last_name'];
+  for (const k of [...need, 'city', 'district', 'address', 'phone', 'email'])
+    if (!f[k]) return res.status(400).json({ error: `${k} талбар хоосон байна` });
+  const m = await createMerchant(type, f);
+  if (m?.id) {
+    const st = await getSettings();
+    await store.saveSettings({ ...st, qqMerchantId: String(m.id) });
+  }
+  res.json(m);
+}));
+
 app.get('/api/admin/settings', requireAdmin, wrap(async (_req, res) => res.json(await getSettings())));
 
 app.put('/api/admin/settings', requireAdmin, wrap(async (req, res) => {
@@ -533,6 +586,10 @@ app.put('/api/admin/settings', requireAdmin, wrap(async (req, res) => {
     pointValue: int(b.pointValue, 1, 1_000_000, 1),
     pointsMaxPercent: int(b.pointsMaxPercent, 0, 100, 100),
     emailOnStatus: b.emailOnStatus !== false,
+    bankName: clip(b.bankName, 60), bankAccount: clip(b.bankAccount, 40),
+    bankAccountHolder: clip(b.bankAccountHolder, 80),
+    qqMerchantId: clip(b.qqMerchantId, 100).trim(),
+    paymentQrUrl: /^\/images\/[a-f0-9]{24}$/.test(String(b.paymentQrUrl ?? '')) ? b.paymentQrUrl : '',
   });
   res.json({ ok: true });
 }));

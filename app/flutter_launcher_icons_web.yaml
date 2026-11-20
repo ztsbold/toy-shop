@@ -1,0 +1,9 @@
+# Вэб хувилбарын лого (iPhone-ийн "Add to Home Screen" дүрс). Зөвхөн web.yml ашиглана.
+flutter_launcher_icons:
+  android: false
+  ios: false
+  web:
+    generate: true
+    image_path: "assets/icon/icon.png"
+    background_color: "#1558E0"
+    theme_color: "#1558E0"
