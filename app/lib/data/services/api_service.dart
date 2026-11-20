@@ -110,15 +110,15 @@ class ApiService {
 
   // ---------- Нэвтрэлт ----------
   /// Дахин код авах хүртэл хүлээх секунд
-  Future<int> requestOtp(String phone) async {
-    final r = await _send('POST', '/api/auth/request-otp', {'phone': phone},
+  Future<int> requestOtp(String email) async {
+    final r = await _send('POST', '/api/auth/request-otp', {'email': email},
         _slow) as Map<String, dynamic>;
     return (r['retryAfter'] as num? ?? 60).toInt();
   }
 
-  Future<AuthResult> verifyOtp(String phone, String code) async {
+  Future<AuthResult> verifyOtp(String email, String code) async {
     final r = await _send('POST', '/api/auth/verify',
-        {'phone': phone, 'code': code}) as Map<String, dynamic>;
+        {'email': email, 'code': code}) as Map<String, dynamic>;
     return AuthResult(
       token: r['token'] as String,
       customer: Customer.fromJson(r['customer'] as Map<String, dynamic>),
@@ -129,8 +129,9 @@ class ApiService {
   Future<Customer> fetchMe() async =>
       Customer.fromJson(await _get('/api/me', _slow) as Map<String, dynamic>);
 
-  Future<Customer> updateName(String name) async => Customer.fromJson(
-      await _send('PATCH', '/api/me', {'name': name}) as Map<String, dynamic>);
+  Future<Customer> updateProfile(String name, String phone) async =>
+      Customer.fromJson(await _send('PATCH', '/api/me',
+          {'name': name, 'phone': phone}) as Map<String, dynamic>);
 
   Future<List<OrderSummary>> fetchMyOrders() async =>
       ((await _get('/api/me/orders')) as List)

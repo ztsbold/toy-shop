@@ -36,7 +36,8 @@ const toOrder = (r) => r && ({
   pointsEarned: r.points_earned ?? 0, history: r.history ?? [],
 });
 const toCustomer = (r) => r && ({
-  id: r.id, phone: r.phone, name: r.name ?? '', points: r.points, createdAt: Number(r.created_at),
+  id: r.id, email: r.email ?? '', phone: r.phone ?? '', name: r.name ?? '',
+  points: r.points, createdAt: Number(r.created_at),
 });
 
 let pool;
@@ -72,18 +73,23 @@ export const store = {
       id TEXT PRIMARY KEY, mime TEXT NOT NULL, data BYTEA NOT NULL, created_at BIGINT NOT NULL)`);
     await q(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value JSONB NOT NULL)`);
     await q(`CREATE TABLE IF NOT EXISTS customers (
-      id TEXT PRIMARY KEY, phone TEXT UNIQUE NOT NULL, name TEXT DEFAULT '',
+      id TEXT PRIMARY KEY, phone TEXT, name TEXT DEFAULT '',
       points INTEGER NOT NULL DEFAULT 0, created_at BIGINT NOT NULL)`);
+    // v4: имэйлээр нэвтрэх. Хуучин (утсаар бүртгүүлсэн) хэрэглэгчид хэвээр үлдэнэ.
+    await q(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS email TEXT`);
+    // Утас нэвтрэх түлхүүр байхаа больсон: давтагдаж болно, хоосон байж болно
+    await q(`ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_phone_key`);
+    await q(`ALTER TABLE customers ALTER COLUMN phone DROP NOT NULL`);
+    await q(`CREATE UNIQUE INDEX IF NOT EXISTS customers_email_idx ON customers (email)`);
     await q(`CREATE TABLE IF NOT EXISTS points_ledger (
       id TEXT PRIMARY KEY, customer_id TEXT NOT NULL, order_id TEXT, delta INTEGER NOT NULL,
       reason TEXT NOT NULL, created_at BIGINT NOT NULL)`);
-    await q(`CREATE TABLE IF NOT EXISTS otp_codes (
-      phone TEXT PRIMARY KEY, code_hash TEXT NOT NULL, expires_at BIGINT NOT NULL,
+    await q(`CREATE TABLE IF NOT EXISTS email_otp (
+      email TEXT PRIMARY KEY, code_hash TEXT NOT NULL, expires_at BIGINT NOT NULL,
       attempts INTEGER NOT NULL DEFAULT 0)`);
-    await q(`CREATE TABLE IF NOT EXISTS sms_log (
-      id TEXT PRIMARY KEY, phone TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL,
-      created_at BIGINT NOT NULL)`);
-    await q(`ALTER TABLE sms_log ADD COLUMN IF NOT EXISTS kind TEXT DEFAULT 'info'`);
+    await q(`CREATE TABLE IF NOT EXISTS email_log (
+      id TEXT PRIMARY KEY, recipient TEXT NOT NULL, subject TEXT NOT NULL, text TEXT NOT NULL,
+      status TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'info', created_at BIGINT NOT NULL)`);
     await q(`CREATE TABLE IF NOT EXISTS notifications (
       id TEXT PRIMARY KEY, customer_id TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL,
       order_id TEXT, is_read BOOLEAN NOT NULL DEFAULT FALSE, created_at BIGINT NOT NULL)`);
@@ -174,22 +180,26 @@ export const store = {
     const { rows } = await q('SELECT * FROM customers WHERE id=$1', [id]);
     return toCustomer(rows[0]);
   },
+  async getCustomerByEmail(email) {
+    const { rows } = await q('SELECT * FROM customers WHERE email=$1', [email]);
+    return toCustomer(rows[0]);
+  },
   async getCustomerByPhone(phone) {
     const { rows } = await q('SELECT * FROM customers WHERE phone=$1', [phone]);
     return toCustomer(rows[0]);
   },
-  async createCustomer(id, phone, name) {
-    await q(`INSERT INTO customers (id,phone,name,points,created_at) VALUES ($1,$2,$3,0,$4)
-      ON CONFLICT (phone) DO NOTHING`, [id, phone, name ?? '', Date.now()]);
-    return this.getCustomerByPhone(phone);
+  async createCustomer(id, email) {
+    await q(`INSERT INTO customers (id,email,phone,name,points,created_at) VALUES ($1,$2,NULL,'',0,$3)
+      ON CONFLICT (email) DO NOTHING`, [id, email, Date.now()]);
+    return this.getCustomerByEmail(email);
   },
-  async updateCustomerName(id, name) {
-    await q('UPDATE customers SET name=$2 WHERE id=$1', [id, name]);
+  async updateCustomerProfile(id, name, phone) {
+    await q('UPDATE customers SET name=$2, phone=$3 WHERE id=$1', [id, name, phone]);
   },
   async listCustomers(limit = 500) {
-    const { rows } = await q(`SELECT c.id, c.phone, c.name, c.points, c.created_at, COUNT(o.id)::int AS order_count
+    const { rows } = await q(`SELECT c.id, c.email, c.phone, c.name, c.points, c.created_at, COUNT(o.id)::int AS order_count
       FROM customers c LEFT JOIN orders o ON o.customer_id = c.id
-      GROUP BY c.id, c.phone, c.name, c.points, c.created_at
+      GROUP BY c.id, c.email, c.phone, c.name, c.points, c.created_at
       ORDER BY c.created_at DESC LIMIT $1`, [limit]);
     return rows.map((r) => ({ ...toCustomer(r), orderCount: r.order_count }));
   },
@@ -220,39 +230,39 @@ export const store = {
     return rows.map((r) => ({ delta: r.delta, reason: r.reason, orderId: r.order_id, createdAt: Number(r.created_at) }));
   },
 
-  // ---------- OTP ----------
-  async saveOtp(phone, codeHash, expiresAt) {
-    await q(`INSERT INTO otp_codes (phone,code_hash,expires_at,attempts) VALUES ($1,$2,$3,0)
-      ON CONFLICT (phone) DO UPDATE SET code_hash=$2, expires_at=$3, attempts=0`, [phone, codeHash, expiresAt]);
+  // ---------- Имэйл код (OTP) ----------
+  async saveOtp(email, codeHash, expiresAt) {
+    await q(`INSERT INTO email_otp (email,code_hash,expires_at,attempts) VALUES ($1,$2,$3,0)
+      ON CONFLICT (email) DO UPDATE SET code_hash=$2, expires_at=$3, attempts=0`, [email, codeHash, expiresAt]);
   },
-  async getOtp(phone) {
-    const { rows } = await q('SELECT * FROM otp_codes WHERE phone=$1', [phone]);
+  async getOtp(email) {
+    const { rows } = await q('SELECT * FROM email_otp WHERE email=$1', [email]);
     return rows[0] ? { codeHash: rows[0].code_hash, expiresAt: Number(rows[0].expires_at), attempts: rows[0].attempts } : null;
   },
-  async bumpOtpAttempts(phone) {
-    await q('UPDATE otp_codes SET attempts = attempts + 1 WHERE phone=$1', [phone]);
+  async bumpOtpAttempts(email) {
+    await q('UPDATE email_otp SET attempts = attempts + 1 WHERE email=$1', [email]);
   },
-  async deleteOtp(phone) {
-    await q('DELETE FROM otp_codes WHERE phone=$1', [phone]);
+  async deleteOtp(email) {
+    await q('DELETE FROM email_otp WHERE email=$1', [email]);
   },
 
-  // ---------- SMS лог ----------
-  async logSms(phone, text, status, kind = 'info') {
-    await q('INSERT INTO sms_log (id,phone,text,status,created_at,kind) VALUES ($1,$2,$3,$4,$5,$6)',
-      [`sms_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, phone, text, status, Date.now(), kind]);
+  // ---------- Имэйлийн лог ----------
+  async logEmail(to, subject, text, status, kind = 'info') {
+    await q('INSERT INTO email_log (id,recipient,subject,text,status,kind,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [`em_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, to, subject, text, status, kind, Date.now()]);
   },
-  // Хязгаарлалт зөвхөн нэвтрэх кодод (kind='otp') үйлчилнэ
-  async countSmsSince(phone, since) {
-    const { rows } = await q(`SELECT COUNT(*)::int AS n FROM sms_log WHERE phone=$1 AND created_at >= $2 AND kind='otp'`, [phone, since]);
+  // Хязгаарлалт зөвхөн нэвтрэх кодод үйлчилнэ
+  async countOtpEmailsSince(to, since) {
+    const { rows } = await q(`SELECT COUNT(*)::int AS n FROM email_log WHERE recipient=$1 AND created_at >= $2 AND kind='otp'`, [to, since]);
     return rows[0].n;
   },
-  async lastSmsAt(phone) {
-    const { rows } = await q(`SELECT MAX(created_at) AS t FROM sms_log WHERE phone=$1 AND kind='otp'`, [phone]);
+  async lastOtpEmailAt(to) {
+    const { rows } = await q(`SELECT MAX(created_at) AS t FROM email_log WHERE recipient=$1 AND kind='otp'`, [to]);
     return rows[0]?.t ? Number(rows[0].t) : 0;
   },
-  async listSms(limit = 100) {
-    const { rows } = await q('SELECT * FROM sms_log ORDER BY created_at DESC LIMIT $1', [limit]);
-    return rows.map((r) => ({ phone: r.phone, text: r.text, status: r.status, kind: r.kind, createdAt: Number(r.created_at) }));
+  async listEmails(limit = 100) {
+    const { rows } = await q('SELECT * FROM email_log ORDER BY created_at DESC LIMIT $1', [limit]);
+    return rows.map((r) => ({ to: r.recipient, subject: r.subject, text: r.text, status: r.status, kind: r.kind, createdAt: Number(r.created_at) }));
   },
 
   // ---------- Мэдэгдэл ----------

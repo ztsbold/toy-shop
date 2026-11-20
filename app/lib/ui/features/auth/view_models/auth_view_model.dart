@@ -40,25 +40,28 @@ class AuthViewModel extends ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<int> requestOtp(String phone) => _repository.requestOtp(phone);
+  /// Нэр, утас дутуу бол профайл бөглөх шаардлагатай
+  bool get needsProfile => _customer != null && !_customer!.profileComplete;
 
-  /// Амжилттай бол шинэ хэрэглэгч эсэхийг буцаана
-  Future<bool> verify(String phone, String code) async {
-    final r = await _repository.verifyOtp(phone, code);
+  Future<int> requestOtp(String email) => _repository.requestOtp(email);
+
+  /// Амжилттай бол профайл бөглөх шаардлагатай эсэхийг буцаана
+  Future<bool> verify(String email, String code) async {
+    final r = await _repository.verifyOtp(email, code);
     _customer = r.customer;
     notifyListeners();
-    return r.isNew || r.customer.name.isEmpty;
+    return r.needsProfile;
   }
 
-  Future<void> updateName(String name) async {
-    _customer = await _repository.updateName(name);
+  Future<void> updateProfile(String name, String phone) async {
+    _customer = await _repository.updateProfile(name, phone);
     notifyListeners();
   }
 
   void clearUnread() {
     final c = _customer;
     if (c == null) return;
-    _customer = Customer(id: c.id, phone: c.phone, name: c.name, points: c.points);
+    _customer = c.copyWith(unread: 0);
     notifyListeners();
   }
 

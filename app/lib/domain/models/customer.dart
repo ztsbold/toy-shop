@@ -1,6 +1,7 @@
 class Customer {
   const Customer({
     required this.id,
+    this.email = '',
     required this.phone,
     required this.name,
     required this.points,
@@ -8,13 +9,22 @@ class Customer {
   });
 
   final String id;
+  final String email;
   final String phone;
   final String name;
   final int points;
   final int unread; // уншаагүй мессежийн тоо
 
+  /// Нэр, утас бөглөгдсөн эсэх (захиалга өгөхөд шаардлагатай)
+  bool get profileComplete => name.trim().isNotEmpty && phone.trim().isNotEmpty;
+
+  Customer copyWith({int? unread}) => Customer(
+      id: id, email: email, phone: phone, name: name, points: points,
+      unread: unread ?? this.unread);
+
   factory Customer.fromJson(Map<String, dynamic> j) => Customer(
         id: j['id'] as String,
+        email: (j['email'] ?? '') as String,
         phone: (j['phone'] ?? '') as String,
         name: (j['name'] ?? '') as String,
         points: (j['points'] as num? ?? 0).toInt(),
@@ -71,4 +81,6 @@ class AuthResult {
   final String token;
   final Customer customer;
   final bool isNew;
+
+  bool get needsProfile => !customer.profileComplete;
 }

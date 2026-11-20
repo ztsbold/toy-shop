@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { store } from './store.js';
-import { sendSms, SMS_PROVIDER } from './sms.js';
+import { sendEmail, emailHtml, EMAIL_PROVIDER } from './mailer.js';
 import { issueToken, verifyToken, newOtpCode, hashOtp, sameHash } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -30,7 +30,7 @@ const DEFAULT_SETTINGS = {
   pointsPerAmount: 1000, // хэдэн ₮ тутамд 1 оноо
   pointValue: 1, // 1 оноо = хэдэн ₮
   pointsMaxPercent: 100, // оноогоор төлж болох барааны дүнгийн дээд хувь
-  smsOnStatus: true, // захиалгын төлөв солигдоход SMS илгээх
+  emailOnStatus: true, // захиалгын төлөв солигдоход имэйл илгээх
 };
 const getSettings = async () => ({ ...DEFAULT_SETTINGS, ...(await store.getSettings()) });
 
@@ -48,16 +48,22 @@ const STATUS_TEXT = {
   CANCELLED: 'Захиалга цуцлагдлаа',
 };
 
-/** Апп доторх мэдэгдэл + (тохиргооноос хамааран) SMS */
+/** Апп доторх мэдэгдэл + (тохиргооноос хамааран) имэйл */
 async function notifyCustomer(order, status, extra = '') {
   if (!order.customerId) return;
   const st = await getSettings();
   const title = STATUS_TEXT[status] ?? status;
   const body = `${order.id} дугаартай захиалга. ${extra}`.trim();
   try { await store.addNotification(order.customerId, title, body, order.id); } catch (e) { console.error(e); }
-  if (st.smsOnStatus && ['PAID', 'SHIPPING', 'DELIVERED', 'CANCELLED'].includes(status)) {
+  if (st.emailOnStatus !== false && ['PAID', 'SHIPPING', 'DELIVERED', 'CANCELLED'].includes(status)) {
     const c = await store.getCustomer(order.customerId);
-    if (c) await sendSms(c.phone, `${st.shopName}: ${title}. ${order.id}. ${extra}`.trim());
+    if (c?.email) {
+      const lines = [`Захиалгын дугаар: ${order.id}`, `Нийт дүн: ${order.total.toLocaleString('en-US')}₮`, extra].filter(Boolean);
+      await sendEmail(c.email, `${st.shopName}: ${title}`, {
+        html: emailHtml({ shopName: st.shopName, heading: title, lines }),
+        text: `${title}\n${lines.join('\n')}`,
+      });
+    }
   }
 }
 
@@ -191,7 +197,7 @@ function requireCustomer(req, res, next) {
 }
 
 app.get('/', (_req, res) => res.redirect('/admin/'));
-app.get('/health', (_req, res) => res.json({ ok: true, paymentMode: PAYMENT_MODE, sms: SMS_PROVIDER }));
+app.get('/health', (_req, res) => res.json({ ok: true, paymentMode: PAYMENT_MODE, email: EMAIL_PROVIDER }));
 
 app.get('/api/config', wrap(async (_req, res) => {
   const st = await getSettings();
@@ -216,41 +222,51 @@ app.get('/api/toys', wrap(async (_req, res) => {
   res.json((await store.listProducts()).map(({ active, ...p }) => p));
 }));
 
-// ---------- Нэвтрэлт (SMS код) ----------
+// ---------- Нэвтрэлт (имэйл код) ----------
+const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$/;
+const normEmail = (v) => String(v ?? '').trim().toLowerCase().slice(0, 254);
+
 app.post('/api/auth/request-otp', wrap(async (req, res) => {
-  const phone = String(req.body?.phone ?? '').trim();
-  if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'Утасны дугаар буруу байна' });
-  const last = await store.lastSmsAt(phone);
+  const email = normEmail(req.body?.email);
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'И-мэйл хаяг буруу байна' });
+  const last = await store.lastOtpEmailAt(email);
   const wait = Math.ceil((last + 60_000 - Date.now()) / 1000);
   if (wait > 0) return res.status(429).json({ error: `${wait} секундын дараа дахин оролдоно уу`, retryAfter: wait });
-  if ((await store.countSmsSince(phone, Date.now() - 3600_000)) >= 5)
+  if ((await store.countOtpEmailsSince(email, Date.now() - 3600_000)) >= 5)
     return res.status(429).json({ error: 'Хэт олон оролдлого. 1 цагийн дараа дахин оролдоно уу.' });
   const st = await getSettings();
   const code = newOtpCode();
-  await store.saveOtp(phone, hashOtp(phone, code), Date.now() + 5 * 60_000);
-  const ok = await sendSms(phone, `${st.shopName}: Таны нэвтрэх код ${code}. 5 минутын дотор оруулна уу.`, 'otp');
-  if (!ok) return res.status(502).json({ error: 'SMS илгээж чадсангүй. Дахин оролдоно уу.' });
-  res.json({ ok: true, retryAfter: 60, testMode: SMS_PROVIDER === 'test' });
+  await store.saveOtp(email, hashOtp(email, code), Date.now() + 10 * 60_000);
+  const ok = await sendEmail(email, `${st.shopName}: нэвтрэх код ${code}`, {
+    html: emailHtml({
+      shopName: st.shopName, heading: 'Таны нэвтрэх код', code,
+      lines: ['Энэ кодыг апп-д оруулна уу. Код 10 минутын дотор хүчинтэй.', 'Хэрэв та хүсэлт гаргаагүй бол энэ имэйлийг үл тоомсорлоно уу.'],
+    }),
+    text: `Таны нэвтрэх код: ${code}\nКод 10 минутын дотор хүчинтэй.`,
+  }, 'otp');
+  if (!ok) return res.status(502).json({ error: 'Имэйл илгээж чадсангүй. Дахин оролдоно уу.' });
+  res.json({ ok: true, retryAfter: 60, testMode: EMAIL_PROVIDER === 'test' });
 }));
 
 app.post('/api/auth/verify', wrap(async (req, res) => {
-  const phone = String(req.body?.phone ?? '').trim();
+  const email = normEmail(req.body?.email);
   const code = String(req.body?.code ?? '').trim();
-  const otp = await store.getOtp(phone);
+  const otp = await store.getOtp(email);
   if (!otp || otp.expiresAt < Date.now()) return res.status(400).json({ error: 'Кодын хугацаа дууссан. Шинэ код авна уу.' });
   if (otp.attempts >= 5) {
-    await store.deleteOtp(phone);
+    await store.deleteOtp(email);
     return res.status(429).json({ error: 'Хэт олон буруу оролдлого. Шинэ код авна уу.' });
   }
-  if (!/^\d{6}$/.test(code) || !sameHash(hashOtp(phone, code), otp.codeHash)) {
-    await store.bumpOtpAttempts(phone);
+  if (!/^\d{6}$/.test(code) || !sameHash(hashOtp(email, code), otp.codeHash)) {
+    await store.bumpOtpAttempts(email);
     return res.status(400).json({ error: 'Код буруу байна' });
   }
-  await store.deleteOtp(phone);
-  let c = await store.getCustomerByPhone(phone);
+  await store.deleteOtp(email);
+  let c = await store.getCustomerByEmail(email);
   const isNew = !c;
-  if (!c) c = await store.createCustomer(rid('c_'), phone, clip(req.body?.name, 80).trim());
-  res.json({ token: issueToken(c.id), customer: c, isNew });
+  if (!c) c = await store.createCustomer(rid('c_'), email);
+  // Нэр, утас бөглөөгүй бол апп профайл бөглөх алхам руу шилжинэ
+  res.json({ token: issueToken(c.id), customer: c, isNew, needsProfile: !c.name || !c.phone });
 }));
 
 app.get('/api/me', requireCustomer, wrap(async (req, res) => {
@@ -260,10 +276,15 @@ app.get('/api/me', requireCustomer, wrap(async (req, res) => {
   res.json({ ...c, unread: notes.filter((n) => !n.read).length });
 }));
 
+// Профайл: нэр ба утас заавал
 app.patch('/api/me', requireCustomer, wrap(async (req, res) => {
-  const name = clip(req.body?.name, 80).trim();
+  const cur = await store.getCustomer(req.customerId);
+  if (!cur) return res.status(401).json({ error: 'Нэвтэрнэ үү' });
+  const name = clip(req.body?.name ?? cur.name, 80).trim();
+  const phone = String(req.body?.phone ?? cur.phone ?? '').replace(/\D/g, '');
   if (!name) return res.status(400).json({ error: 'Нэр оруулна уу' });
-  await store.updateCustomerName(req.customerId, name);
+  if (!PHONE_RE.test(phone)) return res.status(400).json({ error: '8 оронтой утасны дугаар оруулна уу' });
+  await store.updateCustomerProfile(req.customerId, name, phone);
   res.json(await store.getCustomer(req.customerId));
 }));
 
@@ -389,7 +410,7 @@ function requireAdmin(req, res, next) {
   next();
 }
 app.get('/api/admin/info', requireAdmin, (_req, res) =>
-  res.json({ paymentMode: PAYMENT_MODE, sms: SMS_PROVIDER }));
+  res.json({ paymentMode: PAYMENT_MODE, email: EMAIL_PROVIDER }));
 
 app.get('/api/admin/orders', requireAdmin, wrap(async (_req, res) => {
   const orders = await store.listOrders();
@@ -443,7 +464,7 @@ app.post('/api/admin/customers/:id/points', requireAdmin, wrap(async (req, res) 
   res.json({ ok: true, points: bal });
 }));
 
-app.get('/api/admin/sms', requireAdmin, wrap(async (_req, res) => res.json(await store.listSms())));
+app.get('/api/admin/emails', requireAdmin, wrap(async (_req, res) => res.json(await store.listEmails())));
 
 app.get('/api/admin/products', requireAdmin, wrap(async (_req, res) =>
   res.json(await store.listProducts({ includeInactive: true }))));
@@ -500,13 +521,13 @@ app.put('/api/admin/settings', requireAdmin, wrap(async (req, res) => {
     pointsPerAmount: int(b.pointsPerAmount, 1, 10_000_000, 1000),
     pointValue: int(b.pointValue, 1, 1_000_000, 1),
     pointsMaxPercent: int(b.pointsMaxPercent, 0, 100, 100),
-    smsOnStatus: b.smsOnStatus !== false,
+    emailOnStatus: b.emailOnStatus !== false,
   });
   res.json({ ok: true });
 }));
 
 await store.init();
 app.listen(PORT, () => {
-  console.log(`Backend ${PUBLIC_URL} | төлбөр: ${PAYMENT_MODE} | SMS: ${SMS_PROVIDER}`);
+  console.log(`Backend ${PUBLIC_URL} | төлбөр: ${PAYMENT_MODE} | имэйл: ${EMAIL_PROVIDER}`);
   if (!ADMIN_KEY) console.warn('ADMIN_KEY тохируулаагүй — админ хэсэг хаалттай.');
 });

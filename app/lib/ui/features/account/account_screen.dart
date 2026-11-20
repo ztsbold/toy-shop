@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import '../auth/view_models/auth_view_model.dart';
 import '../auth/views/login_screen.dart';
+import '../auth/views/profile_form.dart';
 import '../notifications/notifications_screen.dart';
 import '../shell/home_shell.dart';
 import 'views/order_tracking_screen.dart';
@@ -57,30 +58,8 @@ class AccountScreenState extends State<AccountScreen> {
     if (await showLogin(context)) refresh();
   }
 
-  Future<void> _editName(String current) async {
-    final c = TextEditingController(text: current);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Нэр солих'),
-        content: TextField(controller: c, autofocus: true),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Болих')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, c.text.trim()),
-              child: const Text('Хадгалах')),
-        ],
-      ),
-    );
-    c.dispose();
-    if (name == null || name.isEmpty || !mounted) return;
-    try {
-      await context.read<AuthViewModel>().updateName(name);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-      }
-    }
+  Future<void> _editProfile() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const EditProfileScreen()));
   }
 
   Future<void> _logout() async {
@@ -129,8 +108,8 @@ class AccountScreenState extends State<AccountScreen> {
                   ]),
                   const SizedBox(height: 8),
                   const Text(
-                    'Утасны дугаараараа нэвтэрвэл худалдан авалт бүрээс оноо цуглуулж, '
-                    'захиалгаа хянаж, мэдээллээ SMS-ээр авна.',
+                    'И-мэйл хаягаараа нэвтэрвэл худалдан авалт бүрээс оноо цуглуулж, '
+                    'захиалгаа хянаж, мэдээллээ и-мэйлээр авна.',
                     style: TextStyle(height: 1.4),
                   ),
                   const SizedBox(height: 14),
@@ -161,12 +140,15 @@ class AccountScreenState extends State<AccountScreen> {
                         Text(c.name.isEmpty ? 'Нэргүй' : c.name,
                             style: const TextStyle(
                                 color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
-                        Text(c.phone, style: const TextStyle(color: Colors.white70)),
+                        if (c.email.isNotEmpty)
+                          Text(c.email, style: const TextStyle(color: Colors.white70)),
+                        Text(c.phone.isEmpty ? 'Утас оруулаагүй' : c.phone,
+                            style: const TextStyle(color: Colors.white70)),
                       ]),
                     ),
                     IconButton(
-                      tooltip: 'Нэр солих',
-                      onPressed: () => _editName(c.name),
+                      tooltip: 'Мэдээлэл засах',
+                      onPressed: _editProfile,
                       icon: const Icon(Icons.edit_outlined, color: Colors.white),
                     ),
                   ]),
@@ -187,6 +169,22 @@ class AccountScreenState extends State<AccountScreen> {
                   ),
                 ]),
               ),
+              if (!c.profileComplete)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Material(
+                    color: const Color(0xFFFFF6D6),
+                    borderRadius: BorderRadius.circular(12),
+                    child: ListTile(
+                      leading: const Icon(Icons.info_outline, color: Color(0xFF8A5A00)),
+                      title: const Text('Нэр, утасны дугаараа оруулна уу',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      subtitle: const Text('Захиалга өгөхөд шаардлагатай'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: _editProfile,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 8),
               ListTile(
                 contentPadding: EdgeInsets.zero,

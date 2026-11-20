@@ -10,6 +10,7 @@ import '../../../core/format.dart';
 import '../../../core/theme.dart';
 import '../../auth/view_models/auth_view_model.dart';
 import '../../auth/views/login_screen.dart';
+import '../../auth/views/profile_form.dart';
 import '../../cart/view_models/cart_view_model.dart';
 import '../../config/shop_config_view_model.dart';
 import '../../payment/views/payment_screen.dart';
@@ -116,6 +117,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           orElse: () => cfg.deliveryOptions.first);
 
   Future<void> _submit(ShopConfig cfg) async {
+    // Нэвтэрсэн хэрэглэгчийн профайлд утас заавал байх ёстой
+    if (context.read<AuthViewModel>().needsProfile) {
+      final ok = await Navigator.push<bool>(
+          context, MaterialPageRoute(builder: (_) => const EditProfileScreen()));
+      if (ok != true || !mounted) return;
+      _prefillFromAccount();
+    }
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Улаанаар тэмдэглэсэн талбаруудыг бөглөнө үү.')));

@@ -22,9 +22,16 @@ services:
         sync: false
       - key: BANK_ACCOUNT_HOLDER
         sync: false
+      # Имэйл: test | brevo | resend
+      - key: EMAIL_PROVIDER
+        value: test
+      - key: BREVO_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
       - key: ADMIN_KEY          # автоматаар үүснэ → Environment цэснээс харна
         generateValue: true
       - key: DELIVERY_FEE
-        value: "100"
+        value: "5000"
       - key: FREE_DELIVERY_FROM
         value: "100000"

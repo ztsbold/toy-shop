@@ -73,7 +73,7 @@
 const FULFILL = { NEW: 'Шинэ', PREPARING: 'Бэлтгэж байна', SHIPPING: 'Хүргэлтэнд гарсан', DELIVERED: 'Хүргэгдсэн', CANCELLED: 'Цуцалсан' };
 const MODE = { mock: 'Туршилтын төлбөр', manual: 'Дансаар шилжүүлэх', qpay: 'QPay', points: 'Оноогоор' };
 let key = localStorage.getItem('adminKey') || '';
-let tab = 'orders', filter = 'PAID_NEW', orders = [], products = [], info = null, editing = null, settings = null, pendingImage = null, customers = [], smsLog = [];
+let tab = 'orders', filter = 'PAID_NEW', orders = [], products = [], info = null, editing = null, settings = null, pendingImage = null, customers = [], emailLog = [];
 
 const $app = document.getElementById('app');
 const fmt = (n) => Number(n).toLocaleString('en-US') + '₮';
@@ -115,9 +115,9 @@ function renderLogin(err = '') {
 }
 
 async function load() {
-  [orders, products, settings, customers, smsLog] = await Promise.all([
+  [orders, products, settings, customers, emailLog] = await Promise.all([
     api('/api/admin/orders'), api('/api/admin/products'), api('/api/admin/settings'),
-    api('/api/admin/customers'), api('/api/admin/sms')]);
+    api('/api/admin/customers'), api('/api/admin/emails')]);
   render();
 }
 
@@ -140,7 +140,7 @@ function orderHtml(o) {
       <div><span class="order-id">${esc(o.id)}</span>
         <span class="pill ${o.status}">${o.status === 'PAID' ? 'Төлөгдсөн' : 'Төлбөр хүлээж буй'}</span></div>
       <div class="total">${fmt(o.total)}</div>
-      <div class="meta">${esc(d.fullName)}, ${esc(d.phone)}${o.customer ? ` (бүртгэлтэй: ${esc(o.customer.phone)})` : ''}</div>
+      <div class="meta">${esc(d.fullName)}, ${esc(d.phone)}${o.customer ? ` (бүртгэлтэй: ${esc(o.customer.email || o.customer.phone)})` : ''}</div>
       <div class="meta">${when(o.createdAt)}</div>
     </div>
     <div class="meta">${items}</div>
@@ -241,11 +241,11 @@ function customersPanel() {
   return `
   <p class="meta">${customers.length} хэрэглэгч. Оноо нэмэх бол эерэг, хасах бол сөрөг тоо оруулна.</p>
   <table>
-    <thead><tr><th>Утас</th><th>Нэр</th><th>Оноо</th><th class="hide-sm">Захиалга</th><th></th></tr></thead>
+    <thead><tr><th>И-мэйл</th><th>Нэр, утас</th><th>Оноо</th><th class="hide-sm">Захиалга</th><th></th></tr></thead>
     <tbody>${customers.map((c) => `
       <tr>
-        <td><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></td>
-        <td>${esc(c.name)}</td>
+        <td style="word-break:break-all">${esc(c.email || '—')}</td>
+        <td>${esc(c.name)}<br>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : '<span class="meta">утасгүй</span>'}</td>
         <td><strong>${c.points.toLocaleString('en-US')}</strong></td>
         <td class="hide-sm">${c.orderCount}</td>
         <td style="white-space:nowrap">
@@ -256,19 +256,19 @@ function customersPanel() {
   </table>`;
 }
 
-function smsPanel() {
-  const test = info?.sms === 'test';
+function emailPanel() {
+  const test = info?.email === 'test';
   return `
   ${test ? `<p style="background:var(--sun); color:var(--sun-ink); padding:10px 12px; border-radius:10px; font-weight:700">
-    Туршилтын горим: SMS бодитоор илгээгдэхгүй. Хэрэглэгчийн нэвтрэх кодыг эндээс харж хэлж өгнө үү.
-    SMS үйлчилгээтэй гэрээ хийсний дараа Render дээр SMS_PROVIDER-ийг солино.</p>` : ''}
-  ${smsLog.length ? `<table>
-    <thead><tr><th>Цаг</th><th>Утас</th><th>Мессеж</th><th class="hide-sm">Төлөв</th></tr></thead>
-    <tbody>${smsLog.map((m) => `
-      <tr><td class="meta" style="white-space:nowrap">${when2(m.createdAt)}</td><td>${esc(m.phone)}</td>
-        <td>${esc(m.text)}</td>
+    Туршилтын горим: имэйл бодитоор илгээгдэхгүй. Хэрэглэгчийн нэвтрэх кодыг эндээс харна уу.
+    Brevo-д бүртгүүлсний дараа Render дээр EMAIL_PROVIDER-ийг солино.</p>` : ''}
+  ${emailLog.length ? `<table>
+    <thead><tr><th>Цаг</th><th>Хүлээн авагч</th><th>Агуулга</th><th class="hide-sm">Төлөв</th></tr></thead>
+    <tbody>${emailLog.map((m) => `
+      <tr><td class="meta" style="white-space:nowrap">${when2(m.createdAt)}</td><td style="word-break:break-all">${esc(m.to)}</td>
+        <td><strong>${esc(m.subject)}</strong><br><span class="meta" style="white-space:pre-line">${esc(m.text)}</span></td>
         <td class="hide-sm meta">${m.status === 'sent' ? 'Илгээсэн' : m.status === 'failed' ? 'Алдаа' : 'Туршилт'}</td></tr>`).join('')}
-    </tbody></table>` : '<div class="empty">Мессеж алга.</div>'}`;
+    </tbody></table>` : '<div class="empty">Имэйл алга.</div>'}`;
 }
 
 function settingsPanel() {
@@ -301,11 +301,11 @@ function settingsPanel() {
       <label>1 оноо = хэдэн ₮<input name="pointValue" type="number" min="1" value="${esc(s.pointValue ?? 1)}"></label>
       <label>Барааны дүнгийн хэдэн %-ийг оноогоор төлж болох<input name="pointsMaxPercent" type="number" min="0" max="100" value="${esc(s.pointsMaxPercent ?? 100)}"></label>
     </div>
-    <strong style="display:block; margin-top:18px">Мессеж</strong>
+    <strong style="display:block; margin-top:18px">Имэйл</strong>
     <div class="form-grid" style="margin-top:10px">
-      <label>SMS-ийн эхэнд гарах нэр<input name="shopName" value="${esc(s.shopName ?? 'F5 Toys')}" maxlength="30"></label>
+      <label>Имэйлд гарах дэлгүүрийн нэр<input name="shopName" value="${esc(s.shopName ?? 'F5 Toys')}" maxlength="30"></label>
     </div>
-    <label class="meta"><input type="checkbox" name="smsOnStatus" ${s.smsOnStatus !== false ? 'checked' : ''}> Захиалгын төлөв солигдоход хэрэглэгчид SMS илгээх (төлбөр, хүргэлт, цуцлалт)</label>
+    <label class="meta"><input type="checkbox" name="emailOnStatus" ${s.emailOnStatus !== false ? 'checked' : ''}> Захиалгын төлөв солигдоход хэрэглэгчид имэйл илгээх (төлбөр, хүргэлт, цуцлалт)</label>
     <div class="actions"><button class="btn">Тохиргоо хадгалах</button></div>
     <p class="meta">Өөрчлөлт апп дээр шууд харагдана, апп дахин суулгах шаардлагагүй.</p>
   </form>`;
@@ -334,16 +334,16 @@ function render() {
   $app.innerHTML = `
     <header><h1>Тоглоомын дэлгүүр</h1>
       ${info ? `<span class="mode ${info.paymentMode}">${MODE[info.paymentMode] || info.paymentMode}</span>` : ''}
-      ${info?.sms === 'test' ? '<span class="mode">SMS туршилт</span>' : ''}
+      ${info?.email === 'test' ? '<span class="mode">Имэйл туршилт</span>' : ''}
       <button class="btn ghost" id="logout">Гарах</button></header>
     <nav role="tablist">
       <button role="tab" aria-selected="${tab === 'orders'}" data-tab="orders">Захиалга</button>
       <button role="tab" aria-selected="${tab === 'products'}" data-tab="products">Бараа</button>
       <button role="tab" aria-selected="${tab === 'customers'}" data-tab="customers">Хэрэглэгч</button>
-      <button role="tab" aria-selected="${tab === 'sms'}" data-tab="sms">Мессеж</button>
+      <button role="tab" aria-selected="${tab === 'email'}" data-tab="email">Имэйл</button>
       <button role="tab" aria-selected="${tab === 'settings'}" data-tab="settings">Тохиргоо</button>
     </nav>
-    <main><div class="panel">${({ orders: ordersPanel, products: productsPanel, customers: customersPanel, sms: smsPanel, settings: settingsPanel })[tab]()}</div></main>`;
+    <main><div class="panel">${({ orders: ordersPanel, products: productsPanel, customers: customersPanel, email: emailPanel, settings: settingsPanel })[tab]()}</div></main>`;
   bind();
 }
 
@@ -399,7 +399,7 @@ function bind() {
       shopPhone: f.shopPhone.value.trim(), workHours: f.workHours.value.trim(), shopAddress: f.shopAddress.value.trim(),
       pointsPerAmount: Number(f.pointsPerAmount.value || 1000), pointValue: Number(f.pointValue.value || 1),
       pointsMaxPercent: Number(f.pointsMaxPercent.value || 0), shopName: f.shopName.value.trim(),
-      smsOnStatus: f.smsOnStatus.checked,
+      emailOnStatus: f.emailOnStatus.checked,
     };
     try { await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(body) }); await load(); toast('Тохиргоо хадгалагдлаа'); }
     catch (er) { toast(er.message); }

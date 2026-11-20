@@ -4,16 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../../../../config.dart';
 import '../../../core/theme.dart';
 import '../view_models/auth_view_model.dart';
+import 'profile_form.dart';
 
-/// Нэвтрэх урсгалыг нээнэ. Амжилттай нэвтэрвэл true.
+/// Нэвтрэх урсгалыг нээнэ. Амжилттай нэвтэрч профайлаа бөглөсөн бол true.
 Future<bool> showLogin(BuildContext context) async {
   final ok = await Navigator.push<bool>(
       context, MaterialPageRoute(builder: (_) => const LoginScreen()));
   return ok == true;
 }
+
+final _emailRe = RegExp(r'^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$');
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -23,10 +25,9 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _phone = TextEditingController();
+  final _email = TextEditingController();
   final _code = TextEditingController();
-  final _name = TextEditingController();
-  int _step = 0; // 0 утас, 1 код, 2 нэр
+  int _step = 0; // 0 и-мэйл, 1 код, 2 нэр + утас
   bool _busy = false;
   String? _error;
   int _wait = 0;
@@ -35,11 +36,12 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void dispose() {
     _timer?.cancel();
-    _phone.dispose();
+    _email.dispose();
     _code.dispose();
-    _name.dispose();
     super.dispose();
   }
+
+  String get _emailValue => _email.text.trim().toLowerCase();
 
   void _startCountdown(int seconds) {
     _timer?.cancel();
@@ -66,13 +68,12 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _sendCode() async {
-    final phone = _phone.text.trim();
-    if (!RegExp(r'^[6-9]\d{7}$').hasMatch(phone)) {
-      setState(() => _error = '8 оронтой утасны дугаар оруулна уу');
+    if (!_emailRe.hasMatch(_emailValue)) {
+      setState(() => _error = 'Зөв и-мэйл хаяг оруулна уу');
       return;
     }
     await _run(() async {
-      final wait = await context.read<AuthViewModel>().requestOtp(phone);
+      final wait = await context.read<AuthViewModel>().requestOtp(_emailValue);
       if (!mounted) return;
       setState(() => _step = 1);
       _startCountdown(wait);
@@ -86,10 +87,10 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
     await _run(() async {
-      final needsName =
-          await context.read<AuthViewModel>().verify(_phone.text.trim(), code);
+      final needsProfile =
+          await context.read<AuthViewModel>().verify(_emailValue, code);
       if (!mounted) return;
-      if (needsName) {
+      if (needsProfile) {
         setState(() => _step = 2);
       } else {
         Navigator.pop(context, true);
@@ -97,159 +98,155 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  Future<void> _saveName() async {
-    final name = _name.text.trim();
-    if (name.isEmpty) {
-      setState(() => _error = 'Нэрээ оруулна уу');
-      return;
+  Future<bool> _onBack() async {
+    if (_step == 1) {
+      setState(() {
+        _step = 0;
+        _code.clear();
+        _error = null;
+      });
+      return false;
     }
-    await _run(() async {
-      await context.read<AuthViewModel>().updateName(name);
-      if (mounted) Navigator.pop(context, true);
-    });
+    if (_step == 2) {
+      // Нэвтэрсэн ч профайл дутуу: гарахаас өмнө анхааруулна
+      final leave = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Мэдээлэл дутуу байна'),
+          content: const Text(
+              'Захиалга өгөхийн тулд нэр, утасны дугаараа оруулах шаардлагатай. Дараа нь бөглөх үү?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Дараа')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Одоо бөглөх')),
+          ],
+        ),
+      );
+      if (leave == true && mounted) Navigator.pop(context, false);
+      return false;
+    }
+    return true;
   }
 
   @override
   Widget build(BuildContext context) {
     final (title, subtitle) = switch (_step) {
-      0 => ('Нэвтрэх', 'Утасны дугаараа оруулбал баталгаажуулах код SMS-ээр очно.'),
-      1 => ('Код оруулах', '${_phone.text} дугаарт илгээсэн 6 оронтой кодыг оруулна уу.'),
-      _ => ('Таны нэр', 'Захиалга хүргэхэд ашиглана.'),
+      0 => ('Нэвтрэх', 'И-мэйл хаягаа оруулбал баталгаажуулах код илгээнэ.'),
+      1 => ('Код оруулах', '$_emailValue хаягт илгээсэн 6 оронтой кодыг оруулна уу. Spam хавтсаа ч шалгаарай.'),
+      _ => ('Таны мэдээлэл', 'Захиалга хүргэхэд нэр, утасны дугаар заавал шаардлагатай.'),
     };
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          tooltip: 'Буцах',
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            if (_step == 1) {
-              setState(() {
-                _step = 0;
-                _code.clear();
-                _error = null;
-              });
-            } else {
-              Navigator.pop(context, _step == 2);
-            }
-          },
+    return PopScope(
+      canPop: _step == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _onBack();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            tooltip: 'Буцах',
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () async {
+              if (await _onBack() && context.mounted) Navigator.pop(context, false);
+            },
+          ),
         ),
-      ),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 460),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-              children: [
-                if (_step == 0) ...[
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.sky,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Row(children: [
-                      Icon(Icons.stars_rounded, color: AppColors.blue, size: 36),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Бүртгүүлээд худалдан авалт бүрээсээ оноо цуглуулж, '
-                          'захиалгаа хянаарай.',
-                          style: TextStyle(fontSize: 14.5, height: 1.4),
-                        ),
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                children: [
+                  if (_step == 0) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.sky,
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                    ]),
-                  ),
-                  const SizedBox(height: 24),
-                ],
-                Text(title,
-                    style: const TextStyle(
-                        fontSize: 26, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 6),
-                Text(subtitle,
-                    style: const TextStyle(color: AppColors.muted, fontSize: 15)),
-                const SizedBox(height: 22),
-                if (_step == 0)
-                  TextField(
-                    controller: _phone,
-                    autofocus: true,
-                    keyboardType: TextInputType.phone,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    maxLength: 8,
-                    style: const TextStyle(fontSize: 20, letterSpacing: 1),
-                    decoration: const InputDecoration(
-                      counterText: '',
-                      hintText: '9911 2233',
-                      prefixIcon: Icon(Icons.phone_outlined),
+                      child: const Row(children: [
+                        Icon(Icons.stars_rounded, color: AppColors.blue, size: 36),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Бүртгүүлээд худалдан авалт бүрээсээ оноо цуглуулж, захиалгаа хянаарай.',
+                            style: TextStyle(fontSize: 14.5, height: 1.4),
+                          ),
+                        ),
+                      ]),
                     ),
-                    onSubmitted: (_) => _sendCode(),
-                  )
-                else if (_step == 1)
-                  TextField(
-                    controller: _code,
-                    autofocus: true,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    maxLength: 6,
-                    textAlign: TextAlign.center,
-                    autofillHints: const [AutofillHints.oneTimeCode],
-                    style: const TextStyle(
-                        fontSize: 28, letterSpacing: 10, fontWeight: FontWeight.w700),
-                    decoration:
-                        const InputDecoration(counterText: '', hintText: '••••••'),
-                    onChanged: (v) {
-                      if (v.length == 6) _verify();
-                    },
-                  )
-                else
-                  TextField(
-                    controller: _name,
-                    autofocus: true,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(
-                      hintText: 'Бүтэн нэр',
-                      prefixIcon: Icon(Icons.person_outline),
+                    const SizedBox(height: 24),
+                  ],
+                  Text(title, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 6),
+                  Text(subtitle, style: const TextStyle(color: AppColors.muted, fontSize: 15)),
+                  const SizedBox(height: 22),
+                  if (_step == 2)
+                    ProfileForm(
+                      key: const ValueKey('profile'),
+                      submitLabel: 'Хадгалах',
+                      onSaved: () => Navigator.pop(context, true),
+                    )
+                  else ...[
+                    if (_step == 0)
+                      TextField(
+                        key: const ValueKey('email'),
+                        controller: _email,
+                        autofocus: true,
+                        keyboardType: TextInputType.emailAddress,
+                        autocorrect: false,
+                        textCapitalization: TextCapitalization.none,
+                        autofillHints: const [AutofillHints.email],
+                        decoration: const InputDecoration(
+                          hintText: 'name@gmail.com',
+                          prefixIcon: Icon(Icons.mail_outline),
+                        ),
+                        onSubmitted: (_) => _sendCode(),
+                      )
+                    else
+                      TextField(
+                        key: const ValueKey('code'),
+                        controller: _code,
+                        autofocus: true,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        maxLength: 6,
+                        textAlign: TextAlign.center,
+                        autofillHints: const [AutofillHints.oneTimeCode],
+                        style: const TextStyle(fontSize: 28, letterSpacing: 10, fontWeight: FontWeight.w700),
+                        decoration: const InputDecoration(counterText: '', hintText: '••••••'),
+                        onChanged: (v) {
+                          if (v.length == 6) _verify();
+                        },
+                      ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 10),
+                      Text(_error!, style: const TextStyle(color: AppColors.danger)),
+                    ],
+                    const SizedBox(height: 20),
+                    FilledButton(
+                      onPressed: _busy ? null : (_step == 0 ? _sendCode : _verify),
+                      child: _busy
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : Text(_step == 0 ? 'Код авах' : 'Баталгаажуулах'),
                     ),
-                    onSubmitted: (_) => _saveName(),
-                  ),
-                if (_error != null) ...[
-                  const SizedBox(height: 10),
-                  Text(_error!, style: const TextStyle(color: AppColors.danger)),
+                    if (_step == 1) ...[
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: _wait > 0 || _busy ? null : _sendCode,
+                        child: Text(_wait > 0 ? 'Код дахин авах ($_wait сек)' : 'Код дахин авах'),
+                      ),
+                      TextButton(
+                        onPressed: _busy ? null : () => _onBack(),
+                        child: const Text('И-мэйл хаяг солих'),
+                      ),
+                    ],
+                  ],
                 ],
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: _busy
-                      ? null
-                      : switch (_step) { 0 => _sendCode, 1 => _verify, _ => _saveName },
-                  child: _busy
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
-                      : Text(switch (_step) {
-                          0 => 'Код авах',
-                          1 => 'Баталгаажуулах',
-                          _ => 'Хадгалах',
-                        }),
-                ),
-                if (_step == 1) ...[
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: _wait > 0 || _busy ? null : _sendCode,
-                    child: Text(_wait > 0
-                        ? 'Код дахин авах ($_wait сек)'
-                        : 'Код дахин авах'),
-                  ),
-                ],
-                const SizedBox(height: 24),
-                const Text(
-                  'Нэвтэрснээр $brandMark $brandName дэлгүүрээс таны утсанд захиалгын мэдээлэл SMS-ээр ирнэ.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.muted, fontSize: 12.5),
-                ),
-              ],
+              ),
             ),
           ),
         ),

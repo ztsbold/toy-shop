@@ -59,10 +59,10 @@ class ShopRepository {
     }
   }
 
-  Future<int> requestOtp(String phone) => _api.requestOtp(phone);
+  Future<int> requestOtp(String email) => _api.requestOtp(email);
 
-  Future<AuthResult> verifyOtp(String phone, String code) async {
-    final r = await _api.verifyOtp(phone, code);
+  Future<AuthResult> verifyOtp(String email, String code) async {
+    final r = await _api.verifyOtp(email, code);
     _api.token = r.token;
     await _store.saveToken(r.token);
     return r;
@@ -74,7 +74,8 @@ class ShopRepository {
   }
 
   Future<Customer> me() => _api.fetchMe();
-  Future<Customer> updateName(String name) => _api.updateName(name);
+  Future<Customer> updateProfile(String name, String phone) =>
+      _api.updateProfile(name, phone);
   Future<List<OrderSummary>> serverOrders() => _api.fetchMyOrders();
   Future<List<PointsEntry>> pointsHistory() => _api.fetchPoints();
   Future<List<AppNotification>> notifications() => _api.fetchNotifications();
