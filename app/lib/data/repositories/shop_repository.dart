@@ -29,7 +29,9 @@ class ShopRepository {
         deliveryOptionId: deliveryOptionId,
         pointsToUse: pointsToUse);
     await _store.saveDelivery(delivery);
-    await _store.addOrderId(result.orderId);
+    // Нэвтэрсэн хэрэглэгчийн захиалга серверт бүртгэлтэй тул утсанд хадгалахгүй.
+    // Зөвхөн зочноор (нэвтрэлгүй) өгсөн захиалгыг энэ утсанд санана.
+    if (!isLoggedIn) await _store.addOrderId(result.orderId);
     return result;
   }
 
@@ -48,6 +50,7 @@ class ShopRepository {
 
   /// Хадгалсан токеноор нэвтрэх. Хүчингүй бол устгаж null буцаана.
   Future<Customer?> restoreSession() async {
+    await _store.runOneTimeCleanup();
     final t = await _store.loadToken();
     if (t == null) return null;
     _api.token = t;
@@ -76,6 +79,7 @@ class ShopRepository {
   Future<void> logout() async {
     _api.token = null;
     await _store.saveToken(null);
+    await _store.clearPersonal();
   }
 
   Future<Customer> me() => _api.fetchMe();
@@ -88,6 +92,7 @@ class ShopRepository {
 
   /// Энэ утаснаас өгсөн захиалгууд (олдохгүй болсныг алгасна)
   Future<List<OrderSummary>> myOrders() async {
+    await _store.runOneTimeCleanup();
     final ids = await _store.loadOrderIds();
     final results = await Future.wait(ids.map((id) async {
       try {

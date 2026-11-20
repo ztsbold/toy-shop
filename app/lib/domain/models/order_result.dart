@@ -27,6 +27,7 @@ class ManualTransfer {
     required this.accountHolder,
     required this.reference,
     required this.note,
+    this.qrImageUrl = '',
   });
 
   final String bankName;
@@ -34,6 +35,7 @@ class ManualTransfer {
   final String accountHolder;
   final String reference; // гүйлгээний утга = захиалгын дугаар
   final String note;
+  final String qrImageUrl; // банкны апп-аар уншуулах QR (хоосон байж болно)
 
   factory ManualTransfer.fromJson(Map<String, dynamic> j) => ManualTransfer(
         bankName: (j['bankName'] ?? '') as String,
@@ -41,6 +43,7 @@ class ManualTransfer {
         accountHolder: (j['accountHolder'] ?? '') as String,
         reference: (j['reference'] ?? '') as String,
         note: (j['note'] ?? '') as String,
+        qrImageUrl: (j['qrImageUrl'] ?? '') as String,
       );
 }
 

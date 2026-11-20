@@ -273,6 +273,34 @@ class _ManualTransferCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (info.qrImageUrl.isNotEmpty) ...[
+              Center(child: Text('QR кодоор төлөх', style: text.titleMedium)),
+              const SizedBox(height: 10),
+              Center(
+                child: Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.all(8),
+                  child: Image.network(
+                    info.qrImageUrl,
+                    width: 240,
+                    height: 240,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const SizedBox(
+                        width: 240, height: 80,
+                        child: Center(child: Text('QR ачаалж чадсангүй'))),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Банкны аппаараа QR-ийг уншуулж, дүн болон гүйлгээний утгыг доорх '
+                'мэдээллийн дагуу оруулна уу. Энэ утсаараа төлөх бол дэлгэцээ '
+                'screenshot хийгээд банкны аппын "Зургаас уншуулах" сонголтыг ашиглана.',
+                textAlign: TextAlign.center,
+                style: text.bodySmall,
+              ),
+              const Divider(height: 28),
+            ],
             Text('Дансаар шилжүүлэх', style: text.titleMedium),
             const SizedBox(height: 4),
             if (info.bankName.isNotEmpty) Text(info.bankName),

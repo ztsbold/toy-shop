@@ -10,6 +10,23 @@ class LocalStore {
   static const _favoritesKey = 'favorites';
   static const _ordersKey = 'my_orders';
   static const _tokenKey = 'auth_token';
+  static const _cleanupKey = 'cleanup_v1';
+
+  /// Хэрэглэгчийн хувийн өгөгдлийг (зочны захиалга, хаяг) утаснаас арилгана.
+  /// Гарах, бүртгэл устгах үед дуудна.
+  Future<void> clearPersonal() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_ordersKey);
+    await prefs.remove(_deliveryKey);
+  }
+
+  /// Өмнөх хувилбар захиалгын жагсаалтыг цэвэрлэдэггүй байсан тул нэг удаа арилгана.
+  Future<void> runOneTimeCleanup() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString(_cleanupKey) != null) return;
+    await prefs.remove(_ordersKey);
+    await prefs.setString(_cleanupKey, 'done');
+  }
 
   Future<String?> loadToken() async =>
       (await SharedPreferences.getInstance()).getString(_tokenKey);
