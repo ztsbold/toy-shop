@@ -60,6 +60,8 @@ jobs:
           grep -q 'android.permission.INTERNET' $M || \
             sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' $M
           sed -i 's#android:label="toy_shop"#android:label="F5 Toys"#' $M
+          # Хувийн өгөгдөл (нэвтрэх token, захиалга) Google-ийн нөөцөөр дахин суулгахад сэргээгдэхгүй байх
+          grep -q 'android:allowBackup' $M || sed -i 's#<application#<application android:allowBackup="false" android:fullBackupContent="false"#' $M
 
       - run: flutter pub get
 
