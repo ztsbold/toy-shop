@@ -51,10 +51,11 @@ class ApiService {
       [Duration timeout = _fast]) async {
     final uri = Uri.parse('$baseUrl$path');
     final encoded = jsonEncode(body ?? const {});
-    final res = await (method == 'PATCH'
-            ? _client.patch(uri, headers: _headers, body: encoded)
-            : _client.post(uri, headers: _headers, body: encoded))
-        .timeout(timeout);
+    final res = await switch (method) {
+      'PATCH' => _client.patch(uri, headers: _headers, body: encoded),
+      'DELETE' => _client.delete(uri, headers: _headers),
+      _ => _client.post(uri, headers: _headers, body: encoded),
+    }.timeout(timeout);
     return _decode(res);
   }
 
@@ -150,6 +151,8 @@ class ApiService {
           .cast<Map<String, dynamic>>()
           .map(AppNotification.fromJson)
           .toList();
+
+  Future<void> deleteAccount() async => _send('DELETE', '/api/me', null);
 
   Future<void> markNotificationsRead() async =>
       _send('POST', '/api/me/notifications/read', null);

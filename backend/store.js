@@ -196,6 +196,20 @@ export const store = {
   async updateCustomerProfile(id, name, phone) {
     await q('UPDATE customers SET name=$2, phone=$3 WHERE id=$1', [id, name, phone]);
   },
+  /**
+   * Хэрэглэгчийг устгана. Захиалгууд (дэлгүүрийн бүртгэл) хадгалагдана,
+   * зөвхөн хэрэглэгчтэй холбоо нь тасарна. Оноо, мэдэгдэл, код устана.
+   */
+  async deleteCustomer(id) {
+    const c = await this.getCustomer(id);
+    if (!c) return false;
+    await q('UPDATE orders SET customer_id=NULL WHERE customer_id=$1', [id]);
+    await q('DELETE FROM points_ledger WHERE customer_id=$1', [id]);
+    await q('DELETE FROM notifications WHERE customer_id=$1', [id]);
+    if (c.email) await q('DELETE FROM email_otp WHERE email=$1', [c.email]);
+    await q('DELETE FROM customers WHERE id=$1', [id]);
+    return true;
+  },
   async listCustomers(limit = 500) {
     const { rows } = await q(`SELECT c.id, c.email, c.phone, c.name, c.points, c.created_at, COUNT(o.id)::int AS order_count
       FROM customers c LEFT JOIN orders o ON o.customer_id = c.id

@@ -298,6 +298,12 @@ const orderView = (o) => ({
   history: [{ status: 'CREATED', at: o.createdAt }, ...(o.history ?? []).filter((h) => h.status !== 'CREATED')],
 });
 
+// Хэрэглэгч өөрийн бүртгэлийг устгах (Google Play-ийн шаардлага)
+app.delete('/api/me', requireCustomer, wrap(async (req, res) => {
+  await store.deleteCustomer(req.customerId);
+  res.json({ ok: true });
+}));
+
 app.get('/api/me/orders', requireCustomer, wrap(async (req, res) => {
   res.json((await store.listOrdersByCustomer(req.customerId)).map(orderView));
 }));
@@ -462,6 +468,11 @@ app.post('/api/admin/customers/:id/points', requireAdmin, wrap(async (req, res) 
   const c = await store.getCustomer(req.params.id);
   await store.addNotification(c.id, delta > 0 ? `${delta} оноо нэмэгдлээ` : `${-delta} оноо хасагдлаа`, reason);
   res.json({ ok: true, points: bal });
+}));
+
+app.delete('/api/admin/customers/:id', requireAdmin, wrap(async (req, res) => {
+  if (!(await store.deleteCustomer(req.params.id))) return res.status(404).json({ error: 'Хэрэглэгч олдсонгүй' });
+  res.json({ ok: true });
 }));
 
 app.get('/api/admin/emails', requireAdmin, wrap(async (_req, res) => res.json(await store.listEmails())));

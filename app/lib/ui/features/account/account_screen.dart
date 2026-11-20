@@ -78,6 +78,35 @@ class AccountScreenState extends State<AccountScreen> {
     refresh();
   }
 
+  Future<void> _deleteAccount() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Бүртгэл устгах уу?'),
+        content: const Text(
+            'Таны оноо, мессежүүд бүрмөсөн устна. Энэ үйлдлийг буцаах боломжгүй.\n\n'
+            'Өмнө нь өгсөн захиалгууд дэлгүүрийн бүртгэлд хадгалагдана.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Болих')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Устгах'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await context.read<AuthViewModel>().deleteAccount();
+      messenger.showSnackBar(const SnackBar(content: Text('Бүртгэл устгагдлаа')));
+      refresh();
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthViewModel>();
@@ -227,6 +256,11 @@ class AccountScreenState extends State<AccountScreen> {
                 onPressed: _logout,
                 icon: const Icon(Icons.logout, color: AppColors.danger),
                 label: const Text('Гарах', style: TextStyle(color: AppColors.danger)),
+              ),
+              TextButton(
+                onPressed: _deleteAccount,
+                child: const Text('Бүртгэл устгах',
+                    style: TextStyle(color: AppColors.muted, fontSize: 13)),
               ),
             ],
           ],

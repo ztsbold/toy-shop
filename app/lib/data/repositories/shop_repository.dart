@@ -68,6 +68,11 @@ class ShopRepository {
     return r;
   }
 
+  Future<void> deleteAccount() async {
+    await _api.deleteAccount();
+    await logout();
+  }
+
   Future<void> logout() async {
     _api.token = null;
     await _store.saveToken(null);

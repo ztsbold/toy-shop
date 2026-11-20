@@ -251,6 +251,7 @@ function customersPanel() {
         <td style="white-space:nowrap">
           <input type="number" step="1" style="width:90px" data-pts-input="${esc(c.id)}" aria-label="Оноо">
           <button class="btn ghost" data-pts="${esc(c.id)}">Хадгалах</button>
+          <button class="btn ghost" style="color:var(--warn)" data-del="${esc(c.id)}" data-del-name="${esc(c.email || c.phone)}">Устгах</button>
         </td>
       </tr>`).join('')}</tbody>
   </table>`;
@@ -424,6 +425,11 @@ function bind() {
   document.querySelectorAll('[data-paid]').forEach((b) => (b.onclick = async () => {
     if (!confirm(`${b.dataset.paid} захиалгын төлбөр данс руу орсныг шалгасан уу?`)) return;
     try { await api(`/api/admin/orders/${encodeURIComponent(b.dataset.paid)}/mark-paid`, { method: 'POST' }); await load(); toast('Төлөгдсөн болголоо'); }
+    catch (er) { toast(er.message); }
+  }));
+  document.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => {
+    if (!confirm(`${b.dataset.delName} хэрэглэгчийг устгах уу?\n\nОноо, мессеж нь бүрмөсөн устна. Захиалгууд нь дэлгүүрийн бүртгэлд хадгалагдана. Буцаах боломжгүй.`)) return;
+    try { await api(`/api/admin/customers/${encodeURIComponent(b.dataset.del)}`, { method: 'DELETE' }); await load(); toast('Хэрэглэгч устгагдлаа'); }
     catch (er) { toast(er.message); }
   }));
   document.querySelectorAll('[data-pts]').forEach((b) => (b.onclick = async () => {

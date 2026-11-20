@@ -65,6 +65,12 @@ class AuthViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> deleteAccount() async {
+    await _repository.deleteAccount();
+    _customer = null;
+    notifyListeners();
+  }
+
   Future<void> logout() async {
     await _repository.logout();
     _customer = null;
