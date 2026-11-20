@@ -1,0 +1,64 @@
+name: Build Web App
+
+# Апп-ын кодыг өөрчлөх бүрт вэб хувилбарыг build хийж backend/public/web-д хадгална.
+# Render үүнийг автоматаар аваад https://<таны-хаяг>/ дээр гаргана.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['app/**', '.github/workflows/web.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: web-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: API_URL шалгах
+        run: |
+          if [ -z "${{ vars.API_URL }}" ]; then
+            echo "::error::Settings → Secrets and variables → Actions → Variables хэсэгт API_URL нэмнэ үү"
+            exit 1
+          fi
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Вэб төсөл үүсгэх
+        working-directory: app
+        run: |
+          flutter create --platforms=web --org mn.toyshop --project-name toy_shop .
+          rm -rf test
+          flutter pub get
+          dart run flutter_launcher_icons -f flutter_launcher_icons_web.yaml
+          # Нэр, iPhone-ийн нүүрэн дээрх гарчиг
+          sed -i 's#<title>[^<]*</title>#<title>F5 Toys</title>#' web/index.html
+          sed -i 's#content="toy_shop"#content="F5 Toys"#g' web/index.html
+          sed -i 's#"name": "toy_shop"#"name": "F5 Toys — Тоглоомын дэлгүүр"#; s#"short_name": "toy_shop"#"short_name": "F5 Toys"#' web/manifest.json
+          sed -i 's#<html>#<html lang="mn">#' web/index.html
+
+      - name: Build
+        working-directory: app
+        run: flutter build web --release --dart-define=API_URL=${{ vars.API_URL }}
+
+      - name: backend/public/web руу хадгалах
+        run: |
+          rm -rf backend/public/web
+          mkdir -p backend/public
+          cp -r app/build/web backend/public/web
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -f backend/public/web
+          if git diff --cached --quiet; then echo "Өөрчлөлт алга"; exit 0; fi
+          git commit -m "Вэб апп шинэчлэв (${GITHUB_SHA::7})"
+          git pull --rebase origin main
+          git push origin HEAD:main
