@@ -344,6 +344,12 @@ app.post('/api/me/notifications/read', requireCustomer, wrap(async (req, res) =>
 
 // ---------- Захиалга ----------
 app.post('/api/orders', wrap(async (req, res) => {
+  // Зөвхөн бүртгэлтэй хэрэглэгч захиалга өгнө (гүйлгээ, оноо бүртгэлтэй холбогдоно)
+  const customerId = customerIdFrom(req);
+  const customer = customerId ? await store.getCustomer(customerId) : null;
+  if (!customer) return res.status(401).json({ error: 'Захиалга өгөхийн тулд нэвтэрнэ үү. Апп-аа шинэчилнэ үү.' });
+  if (!customer.name || !customer.phone)
+    return res.status(400).json({ error: 'Бүртгэлдээ нэр, утасны дугаараа оруулна уу' });
   const { items, delivery } = req.body ?? {};
   if (!Array.isArray(items) || items.length === 0 || items.length > 50)
     return res.status(400).json({ error: 'Сагс хоосон байна' });
@@ -367,7 +373,6 @@ app.post('/api/orders', wrap(async (req, res) => {
   const deliveryFee = deliveryFeeFor(st, option, subtotal);
 
   // Оноо ашиглах (зөвхөн нэвтэрсэн, "оноогоор авч болно" бараанд)
-  const customerId = customerIdFrom(req);
   let pointsUsed = 0;
   const wanted = Math.max(0, Math.floor(Number(req.body.pointsToUse) || 0));
   if (customerId && wanted > 0) {

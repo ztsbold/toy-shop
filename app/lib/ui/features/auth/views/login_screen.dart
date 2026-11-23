@@ -18,7 +18,11 @@ Future<bool> showLogin(BuildContext context) async {
 final _emailRe = RegExp(r'^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$');
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.gate = false});
+
+  /// true: апп нээгдэхэд харуулах үндсэн нэвтрэх дэлгэц (буцах товчгүй).
+  /// Амжилттай нэвтэрмэгц AuthGate өөрөө дэлгүүр рүү шилжүүлнэ.
+  final bool gate;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -89,7 +93,7 @@ class _LoginScreenState extends State<LoginScreen> {
     await _run(() async {
       final needsProfile =
           await context.read<AuthViewModel>().verify(_emailValue, code);
-      if (!mounted) return;
+      if (!mounted || widget.gate) return;
       if (needsProfile) {
         setState(() => _step = 2);
       } else {
@@ -130,7 +134,8 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final (title, subtitle) = switch (_step) {
-      0 => ('Нэвтрэх', 'И-мэйл хаягаа оруулбал баталгаажуулах код илгээнэ.'),
+      0 => (widget.gate ? 'Нэвтрэх / Бүртгүүлэх' : 'Нэвтрэх',
+          'И-мэйл хаягаа оруулбал баталгаажуулах код илгээнэ. Шинэ хэрэглэгч бол автоматаар бүртгэгдэнэ.'),
       1 => ('Код оруулах', '$_emailValue хаягт илгээсэн 6 оронтой кодыг оруулна уу. Spam хавтсаа ч шалгаарай.'),
       _ => ('Таны мэдээлэл', 'Захиалга хүргэхэд нэр, утасны дугаар заавал шаардлагатай.'),
     };
@@ -142,13 +147,16 @@ class _LoginScreenState extends State<LoginScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          leading: IconButton(
-            tooltip: 'Буцах',
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () async {
-              if (await _onBack() && context.mounted) Navigator.pop(context, false);
-            },
-          ),
+          automaticallyImplyLeading: false,
+          leading: widget.gate && _step == 0
+              ? null
+              : IconButton(
+                  tooltip: 'Буцах',
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () async {
+                    if (await _onBack() && context.mounted) Navigator.pop(context, false);
+                  },
+                ),
         ),
         body: SafeArea(
           child: Center(

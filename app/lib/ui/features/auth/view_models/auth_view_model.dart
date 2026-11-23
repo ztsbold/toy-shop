@@ -12,18 +12,28 @@ class AuthViewModel extends ChangeNotifier {
   final ShopRepository _repository;
   Customer? _customer;
   bool _ready = false;
+  bool _offline = false;
 
   Customer? get customer => _customer;
+  /// Нэвтэрсэн (token хадгалагдсан) боловч сервертэй холбогдож чадаагүй
+  bool get offline => _offline;
   bool get isLoggedIn => _customer != null;
   bool get ready => _ready;
   int get points => _customer?.points ?? 0;
   int get unread => _customer?.unread ?? 0;
 
   Future<void> init() async {
+    if (_ready) {
+      _ready = false;
+      notifyListeners();
+    }
+    _offline = false;
     try {
       _customer = await _repository.restoreSession();
     } catch (_) {
-      // Сүлжээгүй үед дараа refresh() хийнэ
+      // Token хүчинтэй хэвээр боловч сүлжээ алдаатай бол нэвтрэх дэлгэц биш,
+      // "дахин оролдох" дэлгэц харуулна
+      _offline = _repository.isLoggedIn;
     }
     _ready = true;
     notifyListeners();

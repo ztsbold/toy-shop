@@ -11,7 +11,7 @@ import 'ui/features/cart/view_models/cart_view_model.dart';
 import 'ui/features/catalog/view_models/catalog_view_model.dart';
 import 'ui/features/config/shop_config_view_model.dart';
 import 'ui/features/favorites/view_models/favorites_view_model.dart';
-import 'ui/features/shell/home_shell.dart';
+import 'ui/features/auth/views/auth_gate.dart';
 
 void main() {
   runApp(
@@ -62,7 +62,7 @@ class ToyShopApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       themeMode: ThemeMode.light,
-      home: const HomeShell(),
+      home: const AuthGate(),
     );
   }
 }
