@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { store } from './store.js';
-import { createQuickQrInvoice, isQuickQrPaid, cancelQuickQrInvoice, listCities, listDistricts, createMerchant, listMerchants } from './quickqr.js';
+import { createQuickQrInvoice, isQuickQrPaid, cancelQuickQrInvoice, listCities, listDistricts, createMerchant, listMerchants, getMerchant } from './quickqr.js';
 import { sendEmail, emailHtml, EMAIL_PROVIDER } from './mailer.js';
 import { issueToken, verifyToken, newOtpCode, hashOtp, sameHash } from './auth.js';
 
@@ -547,6 +547,7 @@ const qqWrap = (fn) => wrap(async (req, res) => {
 app.get('/api/admin/quickqr/cities', requireAdmin, qqWrap(async (_req, res) => res.json(await listCities())));
 app.get('/api/admin/quickqr/districts/:city', requireAdmin, qqWrap(async (req, res) => res.json(await listDistricts(req.params.city))));
 app.get('/api/admin/quickqr/merchants', requireAdmin, qqWrap(async (_req, res) => res.json(await listMerchants())));
+app.get('/api/admin/quickqr/merchant/:id', requireAdmin, qqWrap(async (req, res) => res.json(await getMerchant(req.params.id))));
 app.post('/api/admin/quickqr/merchant', requireAdmin, qqWrap(async (req, res) => {
   const b = req.body ?? {};
   const type = b.type === 'company' ? 'company' : 'person';

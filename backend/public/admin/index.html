@@ -288,6 +288,7 @@ function qpayPanel() {
   <form id="qqidform" class="actions" style="margin-bottom:18px">
     <label class="meta">Мерчантын id <input name="qqMerchantId" value="${esc(s.qqMerchantId)}" style="min-width:260px"></label>
     <button class="btn">Хадгалах</button>
+    <button type="button" class="btn ghost" id="qqcheck">Шалгах</button>
     <button type="button" class="btn ghost" id="qqlist">QPay дээрх мерчантууд</button>
   </form>
   <div id="qqout" class="meta" style="white-space:pre-wrap; margin-bottom:14px">${esc(qqMsg)}</div>
@@ -445,12 +446,33 @@ function bind() {
     tab = b.dataset.tab; editing = null; render();
     if (tab === 'qpay' && qqCities === null) loadQqCities();
   }));
+  const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el[ev] = fn; };
   on('qqidform', 'onsubmit', async (e) => {
     e.preventDefault();
     try {
       await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify({ ...settings, qqMerchantId: e.target.qqMerchantId.value.trim() }) });
       await load(); toast('Мерчантын id хадгалагдлаа');
     } catch (er) { toast(er.message); }
+  });
+  on('qqcheck', 'onclick', async () => {
+    const id = document.querySelector('#qqidform [name=qqMerchantId]').value.trim();
+    if (!id) return toast('Мерчантын id оруулна уу');
+    qqMsg = 'Шалгаж байна...'; render();
+    try {
+      const m = await api(`/api/admin/quickqr/merchant/${encodeURIComponent(id)}`);
+      const name = m.name || [m.last_name, m.first_name].filter(Boolean).join(' ') || '—';
+      qqMsg = `✅ Зөв байна. QPay дээр бүртгэлтэй мерчант:\n`
+        + `Нэр: ${name}\nРегистр: ${m.register_number || '—'}\nТөрөл: ${m.type || '—'}\n`
+        + `Утас: ${m.phone || '—'}\nИ-мэйл: ${m.email || '—'}`;
+    } catch (er) {
+      qqMsg = /404|not.?found|олдсонгүй/i.test(er.message)
+        ? '❌ Энэ id-тай мерчант QPay дээр олдсонгүй. Id-гаа шалгана уу.\n\n' + er.message
+        : /401|403|token/i.test(er.message)
+          ? '⚠️ QPay-д нэвтэрч чадсангүй. Render дээрх QQ_USERNAME, QQ_PASSWORD, QQ_TERMINAL_ID, QQ_BASE_URL-ийг шалгана уу.\n\n' + er.message
+          : '⚠️ Шалгаж чадсангүй:\n' + er.message;
+    }
+    const keep = id; render();
+    document.querySelector('#qqidform [name=qqMerchantId]').value = keep;
   });
   on('qqlist', 'onclick', async () => {
     try { qqMsg = JSON.stringify(await api('/api/admin/quickqr/merchants'), null, 2); }
@@ -481,7 +503,6 @@ function bind() {
       await load(); toast('Мерчант бүртгэгдлээ');
     } catch (er) { qqMsg = 'Алдаа: ' + er.message; render(); }
   });
-  const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el[ev] = fn; };
   on('logout', 'onclick', () => { key = ''; localStorage.removeItem('adminKey'); render(); });
   on('filter', 'onchange', (e) => { filter = e.target.value; render(); });
   on('reload', 'onclick', () => load().then(() => toast('Шинэчлэгдлээ')).catch((e) => toast(e.message)));
