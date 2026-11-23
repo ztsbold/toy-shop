@@ -42,7 +42,7 @@ class PaymentViewModel extends ChangeNotifier {
       notifyListeners();
     }
     try {
-      _paid = await _repository.isPaid(order.orderId);
+      _paid = await _repository.isPaid(order.orderId, providerCheck: !silent);
       if (_paid) {
         _timer?.cancel();
       } else if (!silent) {

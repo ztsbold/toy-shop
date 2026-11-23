@@ -420,10 +420,25 @@ app.post('/api/orders', wrap(async (req, res) => {
   });
 }));
 
+// QPay "payment/check"-ийг байнга дуудахыг хориглодог. Тиймээс:
+//  - апп-ын тогтмол асуулга (5 сек тутам) зөвхөн манай өгөгдлийн сангаас уншина
+//    (QPay callback ирэхэд төлөв өөрөө шинэчлэгдэнэ);
+//  - хэрэглэгч "Төлбөр шалгах" дарвал (?check=1) QPay-ээс асууна, нэг захиалгад 30 сек-д нэг удаа.
+const lastProviderCheck = new Map();
+const PROVIDER_MODES = new Set(['qpay', 'quickqr']);
 app.get('/api/orders/:id/status', wrap(async (req, res) => {
   const order = await store.getOrder(req.params.id);
   if (!order) return res.status(404).json({ error: 'Захиалга олдсонгүй' });
-  try { await refreshStatus(order); } catch (e) { console.error(e); }
+  let allowed = true;
+  if (PROVIDER_MODES.has(order.paymentMode)) {
+    const last = lastProviderCheck.get(order.id) ?? 0;
+    allowed = req.query.check === '1' && Date.now() - last > 30_000;
+    if (allowed) lastProviderCheck.set(order.id, Date.now());
+    if (lastProviderCheck.size > 5000) lastProviderCheck.clear();
+  }
+  if (allowed) {
+    try { await refreshStatus(order); } catch (e) { console.error(e); }
+  }
   const fresh = await store.getOrder(order.id);
   const v = orderView(fresh);
   delete v.items; // нэвтрээгүй хүнд барааны жагсаалтыг харуулахгүй
@@ -558,8 +573,8 @@ app.post('/api/admin/quickqr/merchant', requireAdmin, qqWrap(async (req, res) =>
   const type = b.type === 'company' ? 'company' : 'person';
   const f = Object.fromEntries(Object.entries(b).map(([k, v]) => [k, clip(v, 200).trim()]));
   const need = type === 'company'
-    ? ['register_number', 'name', 'owner_register_no', 'owner_first_name', 'owner_last_name']
-    : ['register_number', 'first_name', 'last_name'];
+    ? ['register_number', 'company_name', 'name']
+    : ['register_number', 'first_name', 'last_name', 'business_name'];
   for (const k of [...need, 'city', 'district', 'address', 'phone', 'email'])
     if (!f[k]) return res.status(400).json({ error: `${k} талбар хоосон байна` });
   const m = await createMerchant(type, f);

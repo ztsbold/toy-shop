@@ -68,13 +68,11 @@ async function call(method, path, body, retried = false) {
 export async function createQuickQrInvoice(order, callbackUrl, merchantId) {
   const inv = await call('POST', '/v2/invoice', {
     merchant_id: merchantId || env.QQ_MERCHANT_ID,
-    ...(env.QQ_BRANCH_CODE ? { branch_code: env.QQ_BRANCH_CODE } : {}),
     amount: order.total,
     currency: 'MNT',
-    customer_name: String(order.delivery?.fullName || '').slice(0, 100),
-    callback_url: callbackUrl,
     description: `F5 Toys захиалга ${order.id}`.slice(0, 255),
     mcc_code: env.QQ_MCC || '5945',
+    callback_url: callbackUrl,
     bank_accounts: [{
       account_bank_code: env.QQ_BANK_CODE,
       account_number: env.QQ_ACCOUNT_NUMBER,
@@ -118,15 +116,14 @@ export function createMerchant(type, f) {
     mcc_code: f.mcc_code || env.QQ_MCC || '5945',
     city: f.city, district: f.district, address: f.address, phone: f.phone, email: f.email,
   };
+  // Талбарууд QPay-ийн албан ёсны Postman collection (Quick QR v2.0.0)-ий дагуу
   if (type === 'company') {
     return call('POST', '/v2/merchant/company', {
-      owner_register_no: f.owner_register_no, owner_first_name: f.owner_first_name,
-      owner_last_name: f.owner_last_name, register_number: f.register_number, name: f.name,
-      ...(f.location_lat ? { location_lat: f.location_lat, location_lng: f.location_lng } : {}),
-      ...common,
+      register_number: f.register_number, company_name: f.company_name, name: f.name, ...common,
     });
   }
   return call('POST', '/v2/merchant/person', {
-    register_number: f.register_number, first_name: f.first_name, last_name: f.last_name, ...common,
+    register_number: f.register_number, first_name: f.first_name, last_name: f.last_name,
+    business_name: f.business_name, ...common,
   });
 }

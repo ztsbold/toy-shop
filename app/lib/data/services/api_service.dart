@@ -105,9 +105,12 @@ class ApiService {
           },
           _slow) as Map<String, dynamic>);
 
-  Future<OrderSummary> fetchOrderSummary(String orderId) async =>
-      OrderSummary.fromJson(
-          await _get('/api/orders/$orderId/status') as Map<String, dynamic>);
+  /// [providerCheck] true үед сервер QPay-ээс шууд асууна (хэрэглэгч товч дарсан үед л).
+  Future<OrderSummary> fetchOrderSummary(String orderId,
+          {bool providerCheck = false}) async =>
+      OrderSummary.fromJson(await _get(
+              '/api/orders/$orderId/status${providerCheck ? '?check=1' : ''}')
+          as Map<String, dynamic>);
 
   // ---------- Нэвтрэлт ----------
   /// Дахин код авах хүртэл хүлээх секунд

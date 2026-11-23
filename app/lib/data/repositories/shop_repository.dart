@@ -35,8 +35,9 @@ class ShopRepository {
     return result;
   }
 
-  Future<bool> isPaid(String orderId) async =>
-      (await _api.fetchOrderSummary(orderId)).isPaid;
+  Future<bool> isPaid(String orderId, {bool providerCheck = false}) async =>
+      (await _api.fetchOrderSummary(orderId, providerCheck: providerCheck))
+          .isPaid;
 
   Future<DeliveryInfo?> lastDelivery() => _store.loadDelivery();
 

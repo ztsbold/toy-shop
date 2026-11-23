@@ -301,8 +301,9 @@ function qpayPanel() {
     <div class="form-grid">
       ${qqType === 'person'
         ? f('register_number', 'Регистрийн дугаар', 'УБ99112233') + f('last_name', 'Овог') + f('first_name', 'Нэр')
-        : f('name', 'Байгууллагын нэр') + f('register_number', 'Байгууллагын регистр', '1234567')
-          + f('owner_register_no', 'Эзэмшигчийн регистр') + f('owner_last_name', 'Эзэмшигчийн овог') + f('owner_first_name', 'Эзэмшигчийн нэр')}
+          + f('business_name', 'Дэлгүүрийн нэр', 'F5 Toys')
+        : f('company_name', 'Байгууллагын нэр', 'Эф Тайв ХХК') + f('register_number', 'Байгууллагын регистр', '1234567')
+          + f('name', 'Дэлгүүрийн нэр', 'F5 Toys')}
       ${f('phone', 'Утас', '99112233')}${f('email', 'И-мэйл')}
       <label>MCC код<input name="mcc_code" value="5945"></label>
       <label>Хот / аймаг
