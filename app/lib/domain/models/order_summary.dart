@@ -1,11 +1,13 @@
 class OrderEvent {
-  const OrderEvent({required this.status, required this.at});
+  const OrderEvent({required this.status, required this.at, this.by = ''});
   final String status;
   final DateTime at;
+  final String by; // customer | admin
 
   factory OrderEvent.fromJson(Map<String, dynamic> j) => OrderEvent(
         status: (j['status'] ?? '') as String,
         at: DateTime.fromMillisecondsSinceEpoch((j['at'] as num? ?? 0).toInt()),
+        by: (j['by'] ?? '') as String,
       );
 }
 
@@ -58,8 +60,15 @@ class OrderSummary {
   bool get isPaid => status == 'PAID';
   bool get isCancelled => fulfillment == 'CANCELLED';
 
+  /// Хэрэглэгч өөрөө цуцалж болох эсэх (зөвхөн төлбөр хүлээж буй үед)
+  bool get canCancel => !isPaid && !isCancelled;
+
+  bool get cancelledByCustomer =>
+      isCancelled &&
+      history.any((e) => e.status == 'CANCELLED' && e.by == 'customer');
+
   String get statusLabel {
-    if (isCancelled) return 'Цуцлагдсан';
+    if (isCancelled) return cancelledByCustomer ? 'Та цуцалсан' : 'Цуцлагдсан';
     if (!isPaid) return 'Төлбөр хүлээж буй';
     return switch (fulfillment) {
       'PREPARING' => 'Бэлтгэж байна',

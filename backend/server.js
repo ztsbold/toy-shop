@@ -193,6 +193,34 @@ function validateDelivery(d) {
 }
 const clip = (v, n = 300) => String(v ?? '').slice(0, n);
 
+/**
+ * Захиалга цуцлах (хэрэглэгч эсвэл админ). QPay нэхэмжлэхийг цуцалж,
+ * ашигласан оноог буцааж, олгосон оноо ба үлдэгдлийг засна.
+ */
+async function cancelOrder(order, by) {
+  if (!(await store.setFulfillment(order.id, 'CANCELLED', { by }))) return false;
+  if (order.status === 'PENDING' && order.invoiceId) {
+    try {
+      if (order.paymentMode === 'quickqr') await cancelQuickQrInvoice(order.invoiceId);
+      if (order.paymentMode === 'qpay') await qpayRequest('DELETE', `/v2/invoice/${encodeURIComponent(order.invoiceId)}`);
+    } catch (e) { console.error(e.message); }
+  }
+  let extra = by === 'customer' ? 'Та цуцаллаа.' : '';
+  if (order.customerId && order.pointsUsed > 0) {
+    await store.addPoints(order.customerId, order.pointsUsed, `Захиалга ${order.id} цуцлагдсан, буцаалт`, order.id);
+    extra += ` ${order.pointsUsed} оноо буцаагдлаа.`;
+  }
+  if (order.customerId && order.pointsEarned > 0) {
+    await store.addPoints(order.customerId, -order.pointsEarned, `Захиалга ${order.id} цуцлагдсан`, order.id, { allowPartial: true });
+  }
+  if (order.status === 'PAID') for (const it of order.items) await store.incrementStock(it.toyId, it.qty);
+  await notifyCustomer(order, 'CANCELLED', extra.trim());
+  return true;
+}
+
+// Монголын цагаар өнөөдрийн огноо (YYYY-MM-DD)
+const dayOf = (ms) => new Date(ms + 8 * 3600_000).toISOString().slice(0, 10);
+
 // ---------------- Апп ----------------
 const app = express();
 app.set('trust proxy', 1);
@@ -249,6 +277,7 @@ app.get('/images/:id', wrap(async (req, res) => {
 }));
 
 app.get('/api/toys', wrap(async (_req, res) => {
+  store.addVisit(dayOf(Date.now())).catch((e) => console.error(e.message));
   res.json((await store.listProducts()).map(({ active, ...p }) => p));
 }));
 
@@ -331,6 +360,20 @@ const orderView = (o) => ({
 // Хэрэглэгч өөрийн бүртгэлийг устгах (Google Play-ийн шаардлага)
 app.delete('/api/me', requireCustomer, wrap(async (req, res) => {
   await store.deleteCustomer(req.customerId);
+  res.json({ ok: true });
+}));
+
+// Хэрэглэгч зөвхөн төлбөр хүлээж буй өөрийн захиалгаа цуцална
+app.post('/api/me/orders/:id/cancel', requireCustomer, wrap(async (req, res) => {
+  const order = await store.getOrder(req.params.id);
+  if (!order || order.customerId !== req.customerId) return res.status(404).json({ error: 'Захиалга олдсонгүй' });
+  if (order.fulfillment === 'CANCELLED') return res.json({ ok: true });
+  // Цуцлахын өмнө QPay-ээс төлөгдсөн эсэхийг нэг удаа шалгана (төлсөн мөртлөө цуцлахаас сэргийлнэ)
+  try { await refreshStatus(order); } catch (e) { console.error(e.message); }
+  const fresh = await store.getOrder(order.id);
+  if (fresh.status !== 'PENDING')
+    return res.status(400).json({ error: 'Төлбөр төлөгдсөн захиалгыг цуцлах боломжгүй. Дэлгүүртэй холбогдоно уу.' });
+  await cancelOrder(fresh, 'customer');
   res.json({ ok: true });
 }));
 
@@ -488,30 +531,85 @@ app.patch('/api/admin/orders/:id', requireAdmin, wrap(async (req, res) => {
   if (!FULFILLMENT.includes(f)) return res.status(400).json({ error: 'Төлөв буруу' });
   const order = await store.getOrder(req.params.id);
   if (!order) return res.status(404).json({ error: 'Захиалга олдсонгүй' });
-  if (order.fulfillment === 'CANCELLED') return res.status(400).json({ error: 'Цуцлагдсан захиалгыг өөрчлөх боломжгүй' });
-  if (!(await store.setFulfillment(order.id, f))) return res.json({ ok: true });
-
-  let extra = '';
+  if (order.fulfillment === 'CANCELLED')
+    return res.status(400).json({ error: 'Цуцлагдсан захиалгыг эхлээд "Сэргээх" товчоор сэргээнэ үү' });
   if (f === 'CANCELLED') {
-    // Төлөгдөөгүй QR нэхэмжлэхийг QPay дээр цуцалж, хэрэглэгч андуурч төлөхөөс сэргийлнэ
-    if (order.status === 'PENDING' && order.invoiceId) {
-      try {
-        if (order.paymentMode === 'quickqr') await cancelQuickQrInvoice(order.invoiceId);
-        if (order.paymentMode === 'qpay') await qpayRequest('DELETE', `/v2/invoice/${encodeURIComponent(order.invoiceId)}`);
-      } catch (e) { console.error(e.message); }
-    }
-    // Ашигласан оноог буцааж, олгосон оноог хасна; төлөгдсөн бол үлдэгдлийг сэргээнэ
-    if (order.customerId && order.pointsUsed > 0) {
-      await store.addPoints(order.customerId, order.pointsUsed, `Захиалга ${order.id} цуцлагдсан, буцаалт`, order.id);
-      extra = `${order.pointsUsed} оноо буцаагдлаа.`;
-    }
-    if (order.customerId && order.pointsEarned > 0) {
-      await store.addPoints(order.customerId, -order.pointsEarned, `Захиалга ${order.id} цуцлагдсан`, order.id, { allowPartial: true });
-    }
-    if (order.status === 'PAID') for (const it of order.items) await store.incrementStock(it.toyId, it.qty);
+    await cancelOrder(order, 'admin');
+  } else if (await store.setFulfillment(order.id, f, { by: 'admin' })) {
+    await notifyCustomer(order, f);
   }
-  await notifyCustomer(order, f, extra);
   res.json({ ok: true });
+}));
+
+// Хэрэглэгч цуцалсан ч төлбөр нь орсон байсан гэх мэт үед админ сэргээнэ.
+// Цуцлах үед хийсэн өөрчлөлтүүдийг (оноо, үлдэгдэл) буцааж хэрэгжүүлнэ.
+app.post('/api/admin/orders/:id/restore', requireAdmin, wrap(async (req, res) => {
+  const order = await store.getOrder(req.params.id);
+  if (!order) return res.status(404).json({ error: 'Захиалга олдсонгүй' });
+  if (order.fulfillment !== 'CANCELLED') return res.status(400).json({ error: 'Захиалга цуцлагдаагүй байна' });
+  if (!(await store.setFulfillment(order.id, 'NEW', { by: 'admin', note: 'Сэргээсэн' })))
+    return res.status(409).json({ error: 'Сэргээж чадсангүй, дахин оролдоно уу' });
+  const notes = [];
+  if (order.customerId && order.pointsUsed > 0) {
+    const before = (await store.getCustomer(order.customerId))?.points ?? 0;
+    await store.addPoints(order.customerId, -order.pointsUsed, `Захиалга ${order.id} сэргээсэн`, order.id, { allowPartial: true });
+    if (before < order.pointsUsed) notes.push(`Хэрэглэгчид ${order.pointsUsed} оноо хүрэлцээгүй, ${before} оноо хасав`);
+  }
+  if (order.status === 'PAID') {
+    for (const it of order.items) await store.decrementStock(it.toyId, it.qty);
+    if (order.customerId && order.pointsEarned > 0)
+      await store.addPoints(order.customerId, order.pointsEarned, `Захиалга ${order.id} сэргээсэн`, order.id);
+  }
+  if (order.customerId) {
+    await store.addNotification(order.customerId, 'Захиалга сэргээгдлээ',
+      `${order.id} дугаартай захиалгыг дэлгүүр сэргээлээ.`, order.id);
+  }
+  res.json({ ok: true, notes });
+}));
+
+app.get('/api/admin/dashboard', requireAdmin, wrap(async (req, res) => {
+  const days = Math.min(90, Math.max(7, Number(req.query.days) || 14));
+  const today = dayOf(Date.now());
+  const list = [];
+  for (let i = days - 1; i >= 0; i--) list.push(dayOf(Date.now() - i * 86400_000));
+  const since = Date.parse(`${list[0]}T00:00:00+08:00`);
+  const [orders, visits, customers, products] = await Promise.all([
+    store.listOrdersSince(since), store.listVisits(list[0]), store.listCustomersSince(since),
+    store.listProducts({ includeInactive: true }),
+  ]);
+  const daily = Object.fromEntries(list.map((d) => [d, { day: d, visits: visits[d] ?? 0, orders: 0, paidOrders: 0, revenue: 0, newCustomers: 0 }]));
+  const top = new Map();
+  let pending = 0, toShip = 0, cancelled = 0;
+  for (const o of orders) {
+    const d = daily[dayOf(o.createdAt)];
+    if (!d) continue;
+    d.orders++;
+    if (o.fulfillment === 'CANCELLED') { cancelled++; continue; }
+    if (o.status === 'PENDING') pending++;
+    if (o.status !== 'PAID') continue;
+    if (o.fulfillment === 'NEW' || o.fulfillment === 'PREPARING') toShip++;
+    d.paidOrders++;
+    d.revenue += o.total;
+    for (const it of o.items) {
+      const t = top.get(it.toyId) ?? { toyId: it.toyId, name: it.name, qty: 0, revenue: 0, orders: 0 };
+      t.qty += it.qty; t.revenue += it.price * it.qty; t.orders++;
+      top.set(it.toyId, t);
+    }
+  }
+  for (const c of customers) { const d = daily[dayOf(c.createdAt)]; if (d) d.newCustomers++; }
+  const series = list.map((d) => daily[d]);
+  const sum = (k) => series.reduce((s, r) => s + r[k], 0);
+  const img = new Map(products.map((p) => [p.id, p]));
+  res.json({
+    days, today: daily[today],
+    totals: { revenue: sum('revenue'), paidOrders: sum('paidOrders'), orders: sum('orders'),
+      visits: sum('visits'), newCustomers: sum('newCustomers'), pending, toShip, cancelled },
+    daily: series,
+    topProducts: [...top.values()].sort((a, b) => b.qty - a.qty || b.revenue - a.revenue).slice(0, 10)
+      .map((t) => ({ ...t, emoji: img.get(t.toyId)?.emoji ?? '🎁', imageUrl: img.get(t.toyId)?.imageUrl ?? '', stock: img.get(t.toyId)?.stock ?? 0 })),
+    lowStock: products.filter((p) => p.active !== false && p.stock <= 3)
+      .map(({ id, name, stock, emoji }) => ({ id, name, stock, emoji })).slice(0, 10),
+  });
 }));
 
 app.get('/api/admin/customers', requireAdmin, wrap(async (_req, res) => res.json(await store.listCustomers())));

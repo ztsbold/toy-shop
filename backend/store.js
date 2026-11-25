@@ -72,6 +72,8 @@ export const store = {
     await q(`CREATE TABLE IF NOT EXISTS images (
       id TEXT PRIMARY KEY, mime TEXT NOT NULL, data BYTEA NOT NULL, created_at BIGINT NOT NULL)`);
     await q(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value JSONB NOT NULL)`);
+    // Өдөр тутмын хандалт (апп нээлт) — хяналтын самбарт
+    await q(`CREATE TABLE IF NOT EXISTS daily_visits (day TEXT PRIMARY KEY, visits INTEGER NOT NULL DEFAULT 0)`);
     await q(`CREATE TABLE IF NOT EXISTS customers (
       id TEXT PRIMARY KEY, phone TEXT, name TEXT DEFAULT '',
       points INTEGER NOT NULL DEFAULT 0, created_at BIGINT NOT NULL)`);
@@ -156,14 +158,31 @@ export const store = {
     await q('UPDATE orders SET points_earned=$2 WHERE id=$1', [id, n]);
   },
   /** Хүргэлтийн төлөв солих ба түүхэнд нэмэх. Өөрчлөгдсөн бол true. */
-  async setFulfillment(id, f) {
+  /** extra: { by: 'customer' | 'admin', note } — түүхэнд хадгална */
+  async setFulfillment(id, f, extra = {}) {
     const o = await this.getOrder(id);
     if (!o || o.fulfillment === f) return false;
-    const history = [...(o.history ?? []), { status: f, at: Date.now() }];
+    const history = [...(o.history ?? []), { status: f, at: Date.now(), ...extra }];
     const { rowCount } = await q(
       'UPDATE orders SET fulfillment=$2, history=$3 WHERE id=$1 AND fulfillment=$4',
       [id, f, JSON.stringify(history), o.fulfillment]);
     return rowCount === 1;
+  },
+  async addVisit(day) {
+    await q(`INSERT INTO daily_visits (day, visits) VALUES ($1, 1)
+      ON CONFLICT (day) DO UPDATE SET visits = daily_visits.visits + 1`, [day]);
+  },
+  async listVisits(fromDay) {
+    const { rows } = await q('SELECT day, visits FROM daily_visits WHERE day >= $1', [fromDay]);
+    return Object.fromEntries(rows.map((r) => [r.day, r.visits]));
+  },
+  async listOrdersSince(since) {
+    const { rows } = await q('SELECT * FROM orders WHERE created_at >= $1 ORDER BY created_at DESC', [since]);
+    return rows.map(toOrder);
+  },
+  async listCustomersSince(since) {
+    const { rows } = await q('SELECT id, created_at FROM customers WHERE created_at >= $1', [since]);
+    return rows.map((r) => ({ id: r.id, createdAt: Number(r.created_at) }));
   },
   async listOrders(limit = 200) {
     const { rows } = await q('SELECT * FROM orders ORDER BY created_at DESC LIMIT $1', [limit]);

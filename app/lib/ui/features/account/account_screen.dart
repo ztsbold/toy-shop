@@ -249,7 +249,7 @@ class AccountScreenState extends State<AccountScreen> {
                 onAction: () => HomeShell.of(context)?.selectTab(0),
               )
             else
-              for (final o in _orders) _OrderTile(order: o),
+              for (final o in _orders) _OrderTile(order: o, onChanged: refresh),
             if (c != null) ...[
               const SizedBox(height: 16),
               TextButton.icon(
@@ -271,8 +271,9 @@ class AccountScreenState extends State<AccountScreen> {
 }
 
 class _OrderTile extends StatelessWidget {
-  const _OrderTile({required this.order});
+  const _OrderTile({required this.order, required this.onChanged});
   final OrderSummary order;
+  final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -287,8 +288,11 @@ class _OrderTile extends StatelessWidget {
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => OrderTrackingScreen(order: o))),
+          onTap: () async {
+            await Navigator.push(context,
+                MaterialPageRoute(builder: (_) => OrderTrackingScreen(order: o)));
+            onChanged();
+          },
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -330,6 +334,18 @@ class _OrderTile extends StatelessWidget {
                           color: AppColors.blue, fontWeight: FontWeight.w700, fontSize: 12.5)),
                 ],
                 const Spacer(),
+                if (o.canCancel)
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.danger,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(0, 32),
+                    ),
+                    onPressed: () async {
+                      if (await confirmCancelOrder(context, o.orderId)) onChanged();
+                    },
+                    child: const Text('Цуцлах'),
+                  ),
                 const Text('Хянах', style: TextStyle(color: AppColors.blue)),
                 const Icon(Icons.chevron_right, color: AppColors.blue, size: 20),
               ]),

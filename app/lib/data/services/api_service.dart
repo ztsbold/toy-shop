@@ -157,6 +157,9 @@ class ApiService {
 
   Future<void> deleteAccount() async => _send('DELETE', '/api/me', null);
 
+  Future<void> cancelMyOrder(String orderId) async =>
+      _send('POST', '/api/me/orders/$orderId/cancel', null);
+
   Future<void> markNotificationsRead() async =>
       _send('POST', '/api/me/notifications/read', null);
 }

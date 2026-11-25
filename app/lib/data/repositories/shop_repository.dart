@@ -72,6 +72,8 @@ class ShopRepository {
     return r;
   }
 
+  Future<void> cancelMyOrder(String orderId) => _api.cancelMyOrder(orderId);
+
   Future<void> deleteAccount() async {
     await _api.deleteAccount();
     await logout();

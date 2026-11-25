@@ -11,6 +11,7 @@
     --ink: #1E2A44; --muted: #5B6680; --bg: #F3F6FA; --surface: #FFFFFF;
     --line: #DCE3EE; --sun: #FFC93C; --sun-ink: #4A3600;
     --ok: #1F8A5B; --warn: #B4521A; --off: #8A93A6;
+    --accent: #1558E0; --danger: #B91C1C; --grid: #E8EDF4;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
@@ -18,6 +19,7 @@
       --ink: #E8EDF6; --muted: #A2ACC0; --bg: #121826; --surface: #1B2334;
       --line: #2C3750; --sun: #FFC93C; --sun-ink: #2A1F00;
       --ok: #4FD69C; --warn: #FF9B5E; --off: #7D869A;
+      --accent: #5B8DEF; --danger: #F87171; --grid: #2A3448;
       color-scheme: dark;
     }
   }
@@ -25,9 +27,17 @@
   body { margin: 0; font-family: Nunito, system-ui, sans-serif; background: var(--bg); color: var(--ink); line-height: 1.45; }
   header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
   header h1 { font-size: 1.15rem; font-weight: 800; margin: 0; flex: 1; }
+  @media (max-width: 640px) {
+    header { flex-wrap: wrap; padding: 12px 16px; }
+    header h1 { flex-basis: 100%; }
+    nav { padding: 10px 16px 0; }
+    main { padding: 0 16px 60px; }
+    .ocard-h .total { width: 100%; }
+  }
   .mode { font-size: .8rem; padding: 3px 10px; border-radius: 999px; background: var(--sun); color: var(--sun-ink); font-weight: 700; }
   .mode.qpay, .mode.quickqr { background: var(--ok); color: #fff; }
-  nav { display: flex; gap: 4px; padding: 12px 20px 0; max-width: 960px; margin: 0 auto; }
+  nav { display: flex; gap: 4px; padding: 12px 20px 0; max-width: 960px; margin: 0 auto; overflow-x: auto; scrollbar-width: none; }
+  nav button { white-space: nowrap; flex: none; }
   nav button { border: 0; background: none; font: inherit; font-weight: 700; color: var(--muted); padding: 8px 14px; border-radius: 10px 10px 0 0; cursor: pointer; }
   nav button[aria-selected="true"] { background: var(--surface); color: var(--ink); }
   main { max-width: 960px; margin: 0 auto; padding: 0 20px 60px; }
@@ -39,6 +49,52 @@
   button.btn.sun { background: var(--sun); color: var(--sun-ink); }
   button.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
   button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
+  /* ---- Захиалгын карт ---- */
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { font: inherit; font-size: .88rem; font-weight: 700; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  .chip .n { display: inline-block; min-width: 1.4em; margin-left: 4px; padding: 0 6px; border-radius: 999px; background: var(--bg); color: var(--ink); font-size: .78rem; }
+  .chip[aria-pressed="true"] .n { background: var(--surface); }
+  .search { flex: 1; min-width: 200px; }
+  .ocard { border: 1px solid var(--line); border-left: 5px solid var(--off); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; background: var(--surface); }
+  .ocard.pay-PENDING { border-left-color: var(--warn); }
+  .ocard.pay-PAID { border-left-color: var(--accent); }
+  .ocard.ful-DELIVERED { border-left-color: var(--ok); }
+  .ocard.ful-CANCELLED { border-left-color: var(--danger); opacity: .85; }
+  .ocard-h { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+  .ocard-h .grow { flex: 1; min-width: 180px; }
+  .oid { font-weight: 800; font-size: 1.02rem; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ocard-b { display: grid; grid-template-columns: 1.1fr 1fr; gap: 6px 20px; margin-top: 10px; }
+  @media (max-width: 640px) { .ocard-b { grid-template-columns: 1fr; } }
+  .items { list-style: none; margin: 0; padding: 0; }
+  .items li { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+  .items li:last-child { border-bottom: 0; }
+  .who { font-size: .93rem; }
+  .who strong { display: block; }
+  .pill.ful { color: var(--muted); }
+  .pill.CANCELLED { color: var(--danger); }
+  .pill.DELIVERED { color: var(--ok); }
+  .btn.danger-ghost { background: transparent !important; color: var(--danger) !important; border: 1px solid var(--danger) !important; }
+  .btn.primary { background: var(--accent) !important; color: #fff !important; }
+  .note-box { background: var(--bg); border-radius: 8px; padding: 6px 10px; margin-top: 8px; font-size: .9rem; }
+  /* ---- Самбар ---- */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .kpi { background: var(--bg); border-radius: 12px; padding: 12px 14px; }
+  .kpi .lbl { color: var(--muted); font-size: .85rem; }
+  .kpi .val { font-size: 1.55rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .kpi .sub { color: var(--muted); font-size: .8rem; }
+  button.kpi { font: inherit; color: inherit; border: 0; text-align: left; cursor: pointer; }
+  button.kpi:hover { outline: 2px solid var(--line); }
+  .kpi.attn .val { color: var(--warn); }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
+  .card h3 { margin: 0 0 2px; font-size: 1rem; }
+  .chart { position: relative; }
+  .chart svg { display: block; width: 100%; height: auto; }
+  .chart .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--surface); font-size: .82rem; padding: 6px 9px; border-radius: 8px; white-space: nowrap; transform: translate(-50%, -110%); display: none; z-index: 1; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+  .rankbar { height: 8px; border-radius: 4px; background: var(--accent); min-width: 2px; }
   .order { border-top: 1px solid var(--line); padding: 12px 2px; }
   .order:first-child { border-top: 0; }
   .order-head { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; }
@@ -73,7 +129,7 @@
 const FULFILL = { NEW: 'Шинэ', PREPARING: 'Бэлтгэж байна', SHIPPING: 'Хүргэлтэнд гарсан', DELIVERED: 'Хүргэгдсэн', CANCELLED: 'Цуцалсан' };
 const MODE = { mock: 'Туршилтын төлбөр', manual: 'Дансаар шилжүүлэх', qpay: 'QPay', quickqr: 'QPay Quick QR', points: 'Оноогоор' };
 let key = localStorage.getItem('adminKey') || '';
-let tab = 'orders', filter = 'PAID_NEW', orders = [], products = [], info = null, editing = null, settings = null, pendingImage = null, qrPending = null, customers = [], emailLog = [];
+let tab = 'orders', filter = 'PAID_NEW', orders = [], products = [], info = null, editing = null, settings = null, pendingImage = null, qrPending = null, customers = [], emailLog = [], dash = null, dashDays = 14, oq = '';
 
 const $app = document.getElementById('app');
 const fmt = (n) => Number(n).toLocaleString('en-US') + '₮';
@@ -121,59 +177,233 @@ async function load() {
   render();
 }
 
-function filteredOrders() {
-  return orders.filter((o) => {
-    if (filter === 'PAID_NEW') return o.status === 'PAID' && (o.fulfillment === 'NEW' || o.fulfillment === 'PREPARING');
-    if (filter === 'PENDING') return o.status === 'PENDING';
-    if (filter === 'ALL') return true;
-    return o.fulfillment === filter;
-  });
-}
+const ORDER_FILTERS = {
+  PAID_NEW: ['Илгээх ёстой', (o) => o.status === 'PAID' && (o.fulfillment === 'NEW' || o.fulfillment === 'PREPARING')],
+  PENDING: ['Төлбөр хүлээж буй', (o) => o.status === 'PENDING' && o.fulfillment !== 'CANCELLED'],
+  SHIPPING: ['Хүргэлтэнд', (o) => o.fulfillment === 'SHIPPING'],
+  DELIVERED: ['Хүргэгдсэн', (o) => o.fulfillment === 'DELIVERED'],
+  CANCELLED: ['Цуцлагдсан', (o) => o.fulfillment === 'CANCELLED'],
+  ALL: ['Бүгд', () => true],
+};
+const filteredOrders = () => orders.filter(ORDER_FILTERS[filter]?.[1] ?? (() => true));
+
+// Дараагийн алхмын товч (зөвхөн төлөгдсөн захиалгад)
+const NEXT_STEP = { NEW: ['PREPARING', 'Бэлтгэж эхлэх'], PREPARING: ['SHIPPING', 'Хүргэлтэнд гаргах'], SHIPPING: ['DELIVERED', 'Хүргэгдсэн болгох'] };
+const cancelInfo = (o) => {
+  const e = [...(o.history || [])].reverse().find((h) => h.status === 'CANCELLED');
+  if (!e) return '';
+  return `${e.by === 'customer' ? 'Хэрэглэгч өөрөө цуцалсан' : 'Админ цуцалсан'} · ${when(e.at)}`;
+};
 
 function orderHtml(o) {
   const d = o.delivery || {};
-  const items = o.items.map((i) => `${esc(i.name)} × ${i.qty}`).join(', ');
   const addr = [d.district, d.khoroo && `${d.khoroo}-р хороо`, d.address].filter(Boolean).join(', ');
+  const paid = o.status === 'PAID';
+  const cancelled = o.fulfillment === 'CANCELLED';
+  const next = paid && !cancelled ? NEXT_STEP[o.fulfillment] : null;
+  const search = [o.id, d.fullName, d.phone, o.customer?.email, o.customer?.phone].filter(Boolean).join(' ').toLowerCase();
   return `
-  <div class="order">
-    <div class="order-head">
-      <div><span class="order-id">${esc(o.id)}</span>
-        <span class="pill ${o.status}">${o.status === 'PAID' ? 'Төлөгдсөн' : 'Төлбөр хүлээж буй'}</span></div>
+  <article class="ocard pay-${o.status} ful-${o.fulfillment}" data-search="${esc(search)}">
+    <div class="ocard-h">
+      <div class="grow">
+        <div class="oid">${esc(o.id)}</div>
+        <div class="meta">${when(o.createdAt)} · ${esc(d.deliveryOption?.name || 'Стандарт хүргэлт')} · ${esc(MODE[o.paymentMode] || o.paymentMode)}</div>
+      </div>
+      <div class="badges">
+        <span class="pill ${o.status}">${paid ? 'Төлөгдсөн' : 'Төлбөр хүлээж буй'}</span>
+        <span class="pill ful ${o.fulfillment}">${FULFILL[o.fulfillment] || o.fulfillment}</span>
+      </div>
       <div class="total">${fmt(o.total)}</div>
-      <div class="meta">${esc(d.fullName)}, ${esc(d.phone)}${o.customer ? ` (бүртгэлтэй: ${esc(o.customer.email || o.customer.phone)})` : ''}</div>
-      <div class="meta">${when(o.createdAt)}</div>
     </div>
-    <div class="meta">${items}</div>
-    <details>
-      <summary>Хаяг, дэлгэрэнгүй</summary>
-      <div class="addr">${esc(addr)}${d.note ? '\nТайлбар: ' + esc(d.note) : ''}
-И-баримт: ${d.receiptType === 'company' ? 'Байгууллага, РД ' + esc(d.companyRegister) : 'Хувь хүн'}${d.email ? '\nИ-мэйл: ' + esc(d.email) : ''}
-Хүргэлт: ${esc(d.deliveryOption?.name || 'Стандарт')}
-Бараа ${fmt(o.subtotal)}, хүргэлт ${fmt(o.deliveryFee)}${o.pointsUsed ? `, оноо −${o.pointsUsed}` : ''}${o.pointsEarned ? `, олгосон оноо +${o.pointsEarned}` : ''}, төлбөрийн горим: ${esc(MODE[o.paymentMode] || o.paymentMode)}</div>
-    </details>
+    <div class="ocard-b">
+      <ul class="items">${o.items.map((i) => `<li><span>${esc(i.name)}</span><span class="meta">×${i.qty}</span><span>${fmt(i.price * i.qty)}</span></li>`).join('')}</ul>
+      <div class="who">
+        <strong>${esc(d.fullName)}</strong>
+        <a href="tel:${esc(d.phone)}">${esc(d.phone)}</a>
+        <div>${esc(addr)}</div>
+        ${d.note ? `<div class="meta">Тайлбар: ${esc(d.note)}</div>` : ''}
+        <div class="meta">И-баримт: ${d.receiptType === 'company' ? 'Байгууллага, РД ' + esc(d.companyRegister) : 'Хувь хүн'}</div>
+        ${o.customer ? `<div class="meta">Бүртгэл: ${esc(o.customer.email || o.customer.phone)}</div>` : ''}
+      </div>
+    </div>
+    <div class="meta" style="margin-top:6px">Бараа ${fmt(o.subtotal)} · хүргэлт ${fmt(o.deliveryFee)}${o.pointsUsed ? ` · оноо −${o.pointsUsed}` : ''}${o.pointsEarned ? ` · олгосон оноо +${o.pointsEarned}` : ''}</div>
+    ${cancelled ? `<div class="note-box" style="color:var(--danger)">${esc(cancelInfo(o))}. Төлбөр орсон боловч цуцлагдсан бол хэрэглэгчтэй холбогдож шалгаад сэргээнэ үү.</div>` : ''}
     <div class="actions">
-      ${o.status === 'PENDING' && !['qpay', 'quickqr'].includes(o.paymentMode) && o.fulfillment !== 'CANCELLED'
-        ? `<button class="btn sun" data-paid="${esc(o.id)}">Төлбөр орсон гэж батлах</button>` : ''}
-      <label class="meta">Хүргэлт:
-        <select data-ful="${esc(o.id)}" ${o.fulfillment === 'CANCELLED' ? 'disabled' : ''}>
-          ${Object.entries(FULFILL).map(([k, v]) => `<option value="${k}" ${o.fulfillment === k ? 'selected' : ''}>${v}</option>`).join('')}
-        </select></label>
-      <a class="meta" href="tel:${esc(d.phone)}">Залгах</a>
+      ${next ? `<button class="btn primary" data-next="${esc(o.id)}" data-to="${next[0]}">${next[1]}</button>` : ''}
+      ${!paid && !cancelled ? `<button class="btn sun" data-paid="${esc(o.id)}" data-mode="${esc(o.paymentMode)}">Төлбөр орсон гэж батлах</button>` : ''}
+      ${cancelled ? `<button class="btn sun" data-restore="${esc(o.id)}">Сэргээх</button>` : ''}
+      ${!cancelled && o.fulfillment !== 'DELIVERED' ? `<button class="btn danger-ghost" data-cancel="${esc(o.id)}">Цуцлах</button>` : ''}
+      <span style="flex:1"></span>
+      <a class="btn ghost" href="tel:${esc(d.phone)}" style="text-decoration:none">Залгах</a>
     </div>
-  </div>`;
+  </article>`;
 }
 
 function ordersPanel() {
   const list = filteredOrders();
-  const opts = { PAID_NEW: 'Илгээх ёстой', PENDING: 'Төлбөр хүлээж буй', PREPARING: 'Бэлтгэж байна', SHIPPING: 'Хүргэлтэнд', DELIVERED: 'Хүргэгдсэн', CANCELLED: 'Цуцалсан', ALL: 'Бүгд' };
   return `
   <div class="toolbar">
-    <select id="filter" aria-label="Шүүлтүүр">${Object.entries(opts).map(([k, v]) => `<option value="${k}" ${filter === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
-    <span class="meta">${list.length} захиалга</span>
-    <span style="flex:1"></span>
+    <div class="chips" role="group" aria-label="Шүүлтүүр">
+      ${Object.entries(ORDER_FILTERS).map(([k, [label, fn]]) =>
+        `<button class="chip" data-filter="${k}" aria-pressed="${filter === k}">${label}<span class="n">${orders.filter(fn).length}</span></button>`).join('')}
+    </div>
+  </div>
+  <div class="toolbar">
+    <input id="osearch" class="search" type="search" placeholder="Захиалгын дугаар, нэр, утас, и-мэйлээр хайх" value="${esc(oq)}">
     <button class="btn ghost" id="reload">Шинэчлэх</button>
   </div>
-  ${list.length ? list.map(orderHtml).join('') : '<div class="empty">Энэ ангилалд захиалга алга.</div>'}`;
+  <div id="olist">${list.length ? list.map(orderHtml).join('') : '<div class="empty">Энэ ангилалд захиалга алга.</div>'}</div>
+  <div class="empty" id="onone" style="display:none">Хайлтад тохирох захиалга алга.</div>`;
+}
+
+function applyOrderSearch() {
+  const q = oq.trim().toLowerCase();
+  let shown = 0;
+  document.querySelectorAll('#olist .ocard').forEach((c) => {
+    const ok = !q || c.dataset.search.includes(q);
+    c.style.display = ok ? '' : 'none';
+    if (ok) shown++;
+  });
+  const none = document.getElementById('onone');
+  if (none) none.style.display = q && !shown && document.querySelector('#olist .ocard') ? '' : 'none';
+}
+
+// ---------------- Хяналтын самбар ----------------
+const nf = (n) => Number(n).toLocaleString('en-US');
+const shortDay = (d) => d.slice(5).replace('-', '/');
+
+/** Нэг цуврал (нэг өнгө) багана эсвэл шугаман график. Hover дээр tooltip. */
+function chartSvg(rows, key, kind, fmtVal) {
+  const W = 420, H = 180, L = 44, R = 8, T = 12, B = 24;
+  const max = Math.max(1, ...rows.map((r) => r[key]));
+  const step = Math.pow(10, Math.floor(Math.log10(max)));
+  const nice = Math.ceil(max / step) * step;
+  const pw = (W - L - R) / rows.length;
+  const y = (v) => T + (H - T - B) * (1 - v / nice);
+  const ticks = [0, nice / 2, nice];
+  const every = Math.ceil(rows.length / 8);
+  let g = ticks.map((t) => `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)" stroke-width="1"/>
+    <text x="${L - 6}" y="${y(t) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${fmtVal(t, true)}</text>`).join('');
+  // Сүүлийн өдрөөс эхлэн тэнцүү алхмаар (давхцахгүй)
+  g += rows.map((r, i) => (rows.length - 1 - i) % every === 0
+    ? `<text x="${L + pw * i + pw / 2}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--muted)">${shortDay(r.day)}</text>` : '').join('');
+  let marks = '';
+  if (kind === 'bar') {
+    const bw = Math.max(3, Math.min(28, pw - 4));
+    marks = rows.map((r, i) => {
+      const x = L + pw * i + (pw - bw) / 2, top = y(r[key]), base = y(0), h = base - top;
+      if (h <= 0) return '';
+      const rr = Math.min(4, h, bw / 2);
+      return `<path d="M${x},${base} V${top + rr} Q${x},${top} ${x + rr},${top} H${x + bw - rr} Q${x + bw},${top} ${x + bw},${top + rr} V${base} Z" fill="var(--accent)"/>`;
+    }).join('');
+  } else {
+    const pts = rows.map((r, i) => `${L + pw * i + pw / 2},${y(r[key])}`).join(' ');
+    marks = `<polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  const hits = rows.map((r, i) => `<rect class="hit" x="${L + pw * i}" y="${T}" width="${pw}" height="${H - T - B}" fill="transparent"
+    data-i="${i}" data-cx="${L + pw * i + pw / 2}" data-cy="${y(r[key])}" data-tip="${esc(shortDay(r.day))}: ${esc(fmtVal(r[key]))}"/>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" role="img">${g}${marks}
+    <line class="guide" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="var(--muted)" stroke-dasharray="3 3" visibility="hidden"/>
+    <circle class="dot" r="5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2" visibility="hidden"/>${hits}</svg>`;
+}
+
+function bindCharts() {
+  document.querySelectorAll('.chart').forEach((box) => {
+    const svg = box.querySelector('svg'), tip = box.querySelector('.tip');
+    const guide = svg.querySelector('.guide'), dot = svg.querySelector('.dot');
+    svg.querySelectorAll('.hit').forEach((h) => {
+      h.addEventListener('mouseenter', () => {
+        const cx = +h.dataset.cx, cy = +h.dataset.cy;
+        guide.setAttribute('x1', cx); guide.setAttribute('x2', cx); guide.setAttribute('visibility', 'visible');
+        dot.setAttribute('cx', cx); dot.setAttribute('cy', cy); dot.setAttribute('visibility', 'visible');
+        const k = svg.getBoundingClientRect().width / svg.viewBox.baseVal.width;
+        tip.textContent = h.dataset.tip; tip.style.left = `${cx * k}px`; tip.style.top = `${cy * k}px`; tip.style.display = 'block';
+      });
+    });
+    svg.addEventListener('mouseleave', () => {
+      tip.style.display = 'none'; guide.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden');
+    });
+  });
+}
+
+async function loadDash() {
+  try { dash = await api(`/api/admin/dashboard?days=${dashDays}`); }
+  catch (er) { dash = { error: er.message }; }
+  if (tab === 'dashboard') render();
+}
+
+function dashboardPanel() {
+  if (!dash) return '<div class="empty">Ачаалж байна...</div>';
+  if (dash.error) return `<div class="empty">Самбар ачаалж чадсангүй: ${esc(dash.error)}</div>`;
+  const t = dash.today, T = dash.totals;
+  const kpi = (lbl, val, sub = '', attrs = '', cls = '') => attrs
+    ? `<button class="kpi ${cls}" ${attrs}><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="sub">${sub}</div></button>`
+    : `<div class="kpi ${cls}"><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="sub">${sub}</div></div>`;
+  const maxQty = Math.max(1, ...dash.topProducts.map((p) => p.qty));
+  const csvRows = dash.daily.map((r) => `<tr><td>${r.day}</td><td>${nf(r.visits)}</td><td>${nf(r.orders)}</td><td>${nf(r.paidOrders)}</td><td>${fmt(r.revenue)}</td><td>${nf(r.newCustomers)}</td></tr>`).join('');
+  return `
+  <div class="toolbar">
+    <strong style="font-size:1.05rem">Хяналтын самбар</strong>
+    <span style="flex:1"></span>
+    <div class="chips" role="group" aria-label="Хугацаа">
+      ${[7, 14, 30].map((n) => `<button class="chip" data-days="${n}" aria-pressed="${dashDays === n}">${n} хоног</button>`).join('')}
+    </div>
+    <button class="btn ghost" id="dashreload">Шинэчлэх</button>
+  </div>
+  <div class="meta" style="margin-bottom:6px">Өнөөдөр (${esc(t?.day ?? '')})</div>
+  <div class="kpis">
+    ${kpi('Орлого', fmt(t?.revenue ?? 0), `${nf(t?.paidOrders ?? 0)} төлөгдсөн захиалга`)}
+    ${kpi('Захиалга', nf(t?.orders ?? 0), 'цуцлагдсаныг оролцуулан')}
+    ${kpi('Апп нээлт', nf(t?.visits ?? 0), 'бараа ачаалсан тоо')}
+    ${kpi('Шинэ хэрэглэгч', nf(t?.newCustomers ?? 0))}
+  </div>
+  <div class="meta" style="margin-bottom:6px">Сүүлийн ${dash.days} хоног</div>
+  <div class="kpis">
+    ${kpi('Орлого', fmt(T.revenue), `${nf(T.paidOrders)} төлөгдсөн захиалга`)}
+    ${kpi('Илгээх ёстой', nf(T.toShip), 'Захиалга руу очих', 'data-goto="PAID_NEW"', T.toShip ? 'attn' : '')}
+    ${kpi('Төлбөр хүлээж буй', nf(T.pending), 'Захиалга руу очих', 'data-goto="PENDING"', T.pending ? 'attn' : '')}
+    ${kpi('Цуцлагдсан', nf(T.cancelled), 'Захиалга руу очих', 'data-goto="CANCELLED"')}
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h3>Өдрийн орлого</h3><div class="meta">Төлөгдсөн захиалгаар</div>
+      <div class="chart">${chartSvg(dash.daily, 'revenue', 'bar', (v, axis) => axis && v >= 1000 ? `${nf(Math.round(v / 1000))}k` : fmt(v))}<div class="tip"></div></div>
+    </div>
+    <div class="card">
+      <h3>Өдөр тутмын хандалт</h3><div class="meta">Апп нээлтийн тоо</div>
+      <div class="chart">${chartSvg(dash.daily, 'visits', 'line', (v) => nf(Math.round(v)))}<div class="tip"></div></div>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h3>Хамгийн их зарагдсан тоглоом</h3><div class="meta">Төлөгдсөн захиалгаар, ширхэгээр</div>
+      ${dash.topProducts.length ? `<table>
+        <thead><tr><th>#</th><th>Тоглоом</th><th>Ширхэг</th><th class="hide-sm">Орлого</th></tr></thead>
+        <tbody>${dash.topProducts.map((p, i) => `<tr>
+          <td class="meta">${i + 1}</td>
+          <td>${p.imageUrl ? `<img src="${esc(p.imageUrl)}" alt="" style="width:28px;height:28px;object-fit:contain;vertical-align:middle;margin-right:6px">` : `<span style="margin-right:6px">${esc(p.emoji)}</span>`}${esc(p.name)}
+            <div class="rankbar" style="width:${Math.round((p.qty / maxQty) * 100)}%; margin-top:4px"></div></td>
+          <td><strong>${nf(p.qty)}</strong></td>
+          <td class="hide-sm">${fmt(p.revenue)}</td></tr>`).join('')}</tbody></table>`
+        : '<div class="empty">Энэ хугацаанд борлуулалт алга.</div>'}
+    </div>
+    <div class="card">
+      <h3>Үлдэгдэл бага бараа</h3><div class="meta">3 ба түүнээс бага</div>
+      ${dash.lowStock.length ? `<table><tbody>${dash.lowStock.map((p) => `<tr>
+        <td>${esc(p.emoji)} ${esc(p.name)}</td>
+        <td style="text-align:right; font-weight:800; color:${p.stock === 0 ? 'var(--danger)' : 'var(--warn)'}">${p.stock === 0 ? 'Дууссан' : p.stock + ' ш'}</td>
+        <td style="width:1%"><button class="btn ghost" data-editprod="${esc(p.id)}">Засах</button></td></tr>`).join('')}</tbody></table>`
+        : '<div class="empty">Бүх барааны үлдэгдэл хангалттай.</div>'}
+    </div>
+  </div>
+  <details class="card">
+    <summary>Өдрөөр задалсан хүснэгт</summary>
+    <table style="margin-top:8px">
+      <thead><tr><th>Өдөр</th><th>Апп нээлт</th><th>Захиалга</th><th>Төлөгдсөн</th><th>Орлого</th><th>Шинэ хэрэглэгч</th></tr></thead>
+      <tbody>${csvRows}</tbody>
+    </table>
+  </details>
+  <p class="meta">"Апп нээлт" нь апп эсвэл вэб хуудас нээгдэж бараа ачаалсан тоо. Нэг хүн хэд хэд нээвэл тус бүр тоологдоно.</p>`;
 }
 
 function productForm(p) {
@@ -407,13 +637,14 @@ function render() {
       <button class="btn ghost" id="logout">Гарах</button></header>
     <nav role="tablist">
       <button role="tab" aria-selected="${tab === 'orders'}" data-tab="orders">Захиалга</button>
+      <button role="tab" aria-selected="${tab === 'dashboard'}" data-tab="dashboard">Самбар</button>
       <button role="tab" aria-selected="${tab === 'products'}" data-tab="products">Бараа</button>
       <button role="tab" aria-selected="${tab === 'customers'}" data-tab="customers">Хэрэглэгч</button>
       <button role="tab" aria-selected="${tab === 'email'}" data-tab="email">Имэйл</button>
       <button role="tab" aria-selected="${tab === 'settings'}" data-tab="settings">Тохиргоо</button>
       <button role="tab" aria-selected="${tab === 'qpay'}" data-tab="qpay">QPay</button>
     </nav>
-    <main><div class="panel">${({ orders: ordersPanel, products: productsPanel, customers: customersPanel, email: emailPanel, settings: settingsPanel, qpay: qpayPanel })[tab]()}</div></main>`;
+    <main><div class="panel">${({ dashboard: dashboardPanel, orders: ordersPanel, products: productsPanel, customers: customersPanel, email: emailPanel, settings: settingsPanel, qpay: qpayPanel })[tab]()}</div></main>`;
   bind();
 }
 
@@ -446,6 +677,7 @@ function bind() {
   document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => {
     tab = b.dataset.tab; editing = null; render();
     if (tab === 'qpay' && qqCities === null) loadQqCities();
+    if (tab === 'dashboard') loadDash();
   }));
   const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el[ev] = fn; };
   on('qqidform', 'onsubmit', async (e) => {
@@ -505,7 +737,30 @@ function bind() {
     } catch (er) { qqMsg = 'Алдаа: ' + er.message; render(); }
   });
   on('logout', 'onclick', () => { key = ''; localStorage.removeItem('adminKey'); render(); });
-  on('filter', 'onchange', (e) => { filter = e.target.value; render(); });
+  document.querySelectorAll('[data-filter]').forEach((b) => (b.onclick = () => { filter = b.dataset.filter; render(); }));
+  on('osearch', 'oninput', (e) => { oq = e.target.value; applyOrderSearch(); });
+  if (tab === 'orders') applyOrderSearch();
+  if (tab === 'dashboard') bindCharts();
+  document.querySelectorAll('[data-days]').forEach((b) => (b.onclick = () => { dashDays = +b.dataset.days; dash = null; render(); loadDash(); }));
+  on('dashreload', 'onclick', () => loadDash().then(() => toast('Шинэчлэгдлээ')));
+  document.querySelectorAll('[data-goto]').forEach((b) => (b.onclick = () => { filter = b.dataset.goto; tab = 'orders'; render(); }));
+  document.querySelectorAll('[data-editprod]').forEach((b) => (b.onclick = () => { tab = 'products'; editing = b.dataset.editprod; pendingImage = null; render(); window.scrollTo(0, 0); }));
+  document.querySelectorAll('[data-next]').forEach((b) => (b.onclick = async () => {
+    try { await api(`/api/admin/orders/${encodeURIComponent(b.dataset.next)}`, { method: 'PATCH', body: JSON.stringify({ fulfillment: b.dataset.to }) }); await load(); toast('Төлөв шинэчлэгдлээ'); }
+    catch (er) { toast(er.message); }
+  }));
+  document.querySelectorAll('[data-cancel]').forEach((b) => (b.onclick = async () => {
+    if (!confirm(`${b.dataset.cancel} захиалгыг цуцлах уу? Ашигласан оноо буцаагдаж, олгосон оноо хасагдана.`)) return;
+    try { await api(`/api/admin/orders/${encodeURIComponent(b.dataset.cancel)}`, { method: 'PATCH', body: JSON.stringify({ fulfillment: 'CANCELLED' }) }); await load(); toast('Цуцлагдлаа'); }
+    catch (er) { toast(er.message); }
+  }));
+  document.querySelectorAll('[data-restore]').forEach((b) => (b.onclick = async () => {
+    if (!confirm(`${b.dataset.restore} захиалгыг сэргээх үү?\n\nХэрэглэгчтэй холбогдож төлбөр орсныг шалгасан бол сэргээгээд "Төлбөр орсон гэж батлах" дарна уу. Ашигласан оноо дахин хасагдана.`)) return;
+    try {
+      const r = await api(`/api/admin/orders/${encodeURIComponent(b.dataset.restore)}/restore`, { method: 'POST' });
+      filter = 'ALL'; await load(); toast(r.notes?.length ? r.notes.join('. ') : 'Захиалга сэргээгдлээ');
+    } catch (er) { toast(er.message); }
+  }));
   on('reload', 'onclick', () => load().then(() => toast('Шинэчлэгдлээ')).catch((e) => toast(e.message)));
   on('padd', 'onclick', () => { editing = 'new'; pendingImage = null; render(); });
   on('pcancel', 'onclick', () => { editing = null; pendingImage = null; render(); });
@@ -580,7 +835,10 @@ function bind() {
   });
   document.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { editing = b.dataset.edit; pendingImage = null; render(); window.scrollTo(0, 0); }));
   document.querySelectorAll('[data-paid]').forEach((b) => (b.onclick = async () => {
-    if (!confirm(`${b.dataset.paid} захиалгын төлбөр данс руу орсныг шалгасан уу?`)) return;
+    const viaQpay = ['qpay', 'quickqr'].includes(b.dataset.mode);
+    if (!confirm(viaQpay
+      ? `${b.dataset.paid}: QPay-ээр төлбөр автоматаар баталгаажаагүй байна.\nТа QPay/банкны хуулгаас төлбөр орсныг өөрөө шалгасан уу?`
+      : `${b.dataset.paid} захиалгын төлбөр данс руу орсныг шалгасан уу?`)) return;
     try { await api(`/api/admin/orders/${encodeURIComponent(b.dataset.paid)}/mark-paid`, { method: 'POST' }); await load(); toast('Төлөгдсөн болголоо'); }
     catch (er) { toast(er.message); }
   }));
@@ -609,7 +867,11 @@ function bind() {
   if (!key) return render();
   try { info = await api('/api/admin/info'); await load(); } catch { render(); }
 })();
-setInterval(() => { if (key && tab === 'orders' && editing === null) load().catch(() => {}); }, 60000);
+setInterval(() => {
+  if (!key || editing !== null) return;
+  if (tab === 'orders' && !oq) load().catch(() => {});
+  if (tab === 'dashboard') loadDash();
+}, 60000);
 </script>
 </body>
 </html>

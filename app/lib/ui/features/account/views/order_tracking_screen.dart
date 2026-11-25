@@ -17,6 +17,36 @@ Color statusColor(OrderSummary o) {
   return AppColors.blue;
 }
 
+/// Төлбөр хүлээж буй захиалгыг цуцлах (баталгаажуулалттай). Амжилттай бол true.
+Future<bool> confirmCancelOrder(BuildContext context, String orderId) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Захиалга цуцлах уу?'),
+      content: Text('$orderId захиалга цуцлагдана. Ашигласан оноо тань буцаж орно.\n\n'
+          'Хэрэв та төлбөрөө аль хэдийн төлсөн бол цуцлахгүй, дэлгүүртэй холбогдоно уу.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Үгүй')),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Цуцлах'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true || !context.mounted) return false;
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await context.read<ShopRepository>().cancelMyOrder(orderId);
+    messenger.showSnackBar(const SnackBar(content: Text('Захиалга цуцлагдлаа')));
+    return true;
+  } catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text('$e')));
+    return false;
+  }
+}
+
 /// Захиалгын явцыг алхам алхмаар харуулна
 class OrderTrackingScreen extends StatefulWidget {
   const OrderTrackingScreen({super.key, required this.order});
@@ -114,8 +144,10 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  'Захиалга цуцлагдсан${o.timeOf('CANCELLED') != null ? ' (${formatDateTime(o.timeOf('CANCELLED')!)})' : ''}. '
-                  'Ашигласан оноо тань буцаж орсон.',
+                  '${o.cancelledByCustomer ? 'Та захиалгаа цуцалсан' : 'Захиалга цуцлагдсан'}'
+                  '${o.timeOf('CANCELLED') != null ? ' (${formatDateTime(o.timeOf('CANCELLED')!)})' : ''}. '
+                  '${o.pointsUsed > 0 ? 'Ашигласан оноо тань буцаж орсон. ' : ''}'
+                  'Төлбөр төлсөн бол дэлгүүртэй холбогдоно уу.',
                   style: const TextStyle(color: AppColors.danger),
                 ),
               )
@@ -149,6 +181,20 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
             if (o.pointsUsed > 0)
               _line('Оноогоор хасагдсан', '−${o.pointsUsed} оноо'),
             _line('Нийт төлсөн', formatMnt(o.total), bold: true),
+            if (o.canCancel) ...[
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.danger,
+                  side: const BorderSide(color: AppColors.danger),
+                ),
+                onPressed: () async {
+                  if (await confirmCancelOrder(context, o.orderId)) _reload();
+                },
+                icon: const Icon(Icons.cancel_outlined),
+                label: const Text('Захиалга цуцлах'),
+              ),
+            ],
             if (o.pointsEarned > 0)
               Padding(
                 padding: const EdgeInsets.only(top: 10),
