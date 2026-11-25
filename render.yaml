@@ -15,7 +15,7 @@ services:
       - key: DATABASE_URL       # Neon-ий холболтын мөр
         sync: false
       - key: PAYMENT_MODE       # manual | qpay | mock
-        value: manual
+        value: qpay
       - key: BANK_NAME
         sync: false
       - key: BANK_ACCOUNT
