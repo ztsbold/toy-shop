@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -19,6 +20,10 @@ class PaymentScreen extends StatefulWidget {
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
 }
+
+bool get _isPhone =>
+    defaultTargetPlatform == TargetPlatform.android ||
+    defaultTargetPlatform == TargetPlatform.iOS;
 
 class _PaymentScreenState extends State<PaymentScreen>
     with WidgetsBindingObserver {
@@ -131,7 +136,13 @@ class _PaymentScreenState extends State<PaymentScreen>
                   ]),
                 ),
               ),
-              if (inv.banks.isNotEmpty) ...[
+              // Банкны апп нээх товч зөвхөн утсан дээр утгатай (компьютер дээр апп байхгүй)
+              if (inv.banks.isNotEmpty && !_isPhone) ...[
+                const SizedBox(height: 12),
+                Text('Утасныхаа банкны аппаар дээрх QR кодыг уншуулж төлнө үү.',
+                    textAlign: TextAlign.center, style: text.bodyMedium),
+              ],
+              if (inv.banks.isNotEmpty && _isPhone) ...[
                 const SizedBox(height: 16),
                 Text('Энэ утсан дээрх банкны аппаар төлөх',
                     style: text.titleMedium),
@@ -158,6 +169,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                           child: Image.network(b.logo,
                               width: 52,
                               height: 52,
+                              // Вэб хувилбарт QPay-ийн лого CORS-оор хаагддаг тул <img>-ээр харуулна
+                              webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
                               errorBuilder: (_, __, ___) => const Icon(
                                   Icons.account_balance,
                                   size: 52)),
