@@ -71,28 +71,34 @@ async function notifyCustomer(order, status, extra = '') {
   }
 }
 
-// ---------------- QPay v2 ----------------
+// ---------------- QPay Merchant V2 ----------------
+// Token-ийг санах ойд хадгална. expires_in нь Unix timestamp (секунд) — QPay-ийн баримтаар.
 let qpayToken = null;
-let qpayTokenAt = 0;
+let qpayExpiresAt = 0;
 async function getToken(force = false) {
-  if (!force && qpayToken && Date.now() - qpayTokenAt < 30 * 60 * 1000) return qpayToken;
+  if (!force && qpayToken && Date.now() < qpayExpiresAt - 60_000) return qpayToken;
   const basic = Buffer.from(`${env.QPAY_USERNAME}:${env.QPAY_PASSWORD}`).toString('base64');
   const res = await fetch(`${QPAY_BASE_URL}/v2/auth/token`, { method: 'POST', headers: { Authorization: `Basic ${basic}` } });
   if (!res.ok) throw new Error(`QPay token: ${res.status} ${await res.text()}`);
-  qpayToken = (await res.json()).access_token;
-  qpayTokenAt = Date.now();
+  const d = await res.json();
+  qpayToken = d.access_token;
+  const exp = Number(d.expires_in);
+  qpayExpiresAt = exp > 1e9 ? exp * 1000 : Date.now() + 30 * 60_000;
   return qpayToken;
 }
-async function qpayPost(p, body, retried = false) {
+/** 401/403 үед шинэ token аваад нэг л удаа дахин оролдоно (QPay-ийн шаардлага) */
+async function qpayRequest(method, p, body, retried = false) {
   const res = await fetch(`${QPAY_BASE_URL}${p}`, {
-    method: 'POST',
+    method,
     headers: { Authorization: `Bearer ${await getToken(retried)}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (res.status === 401 && !retried) return qpayPost(p, body, true);
-  if (!res.ok) throw new Error(`QPay ${p}: ${res.status} ${await res.text()}`);
-  return res.json();
+  if ((res.status === 401 || res.status === 403) && !retried) return qpayRequest(method, p, body, true);
+  const text = await res.text();
+  if (!res.ok) throw new Error(`QPay ${p}: ${res.status} ${text.slice(0, 300)}`);
+  return text ? JSON.parse(text) : {};
 }
+const qpayPost = (p, body) => qpayRequest('POST', p, body);
 
 async function createPayment(order) {
   const base = { invoiceId: order.id, qrImage: '', qrText: '', shortUrl: '', banks: [], manual: null };
@@ -488,8 +494,11 @@ app.patch('/api/admin/orders/:id', requireAdmin, wrap(async (req, res) => {
   let extra = '';
   if (f === 'CANCELLED') {
     // Төлөгдөөгүй QR нэхэмжлэхийг QPay дээр цуцалж, хэрэглэгч андуурч төлөхөөс сэргийлнэ
-    if (order.paymentMode === 'quickqr' && order.status === 'PENDING' && order.invoiceId) {
-      try { await cancelQuickQrInvoice(order.invoiceId); } catch (e) { console.error(e.message); }
+    if (order.status === 'PENDING' && order.invoiceId) {
+      try {
+        if (order.paymentMode === 'quickqr') await cancelQuickQrInvoice(order.invoiceId);
+        if (order.paymentMode === 'qpay') await qpayRequest('DELETE', `/v2/invoice/${encodeURIComponent(order.invoiceId)}`);
+      } catch (e) { console.error(e.message); }
     }
     // Ашигласан оноог буцааж, олгосон оноог хасна; төлөгдсөн бол үлдэгдлийг сэргээнэ
     if (order.customerId && order.pointsUsed > 0) {
