@@ -24,7 +24,7 @@ services:
         sync: false
       # Имэйл: test | gmail | brevo | resend
       - key: EMAIL_PROVIDER
-        value: test
+        value: gmail
       - key: GMAIL_SCRIPT_URL
         sync: false
       - key: GMAIL_SCRIPT_SECRET
